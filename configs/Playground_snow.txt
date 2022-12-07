@@ -1,0 +1,25 @@
+root_dir = ./tnt/Playground
+dataset_name = tnt
+exp_name = Playground_snow
+batch_size = 2048
+scale = 8.0
+num_epochs = 30
+
+### render a camera path(through interpolation between poses)
+render_path = True 
+
+### render camera poses from training dataset
+render_train = False
+
+render_rgb = True
+render_depth = True
+
+### appearance embeddings
+embed_a = True
+embed_a_len = 8
+
+mb_size = 0.005
+
+use_skybox = False
+random_bg = True
+### optimize_ext = True

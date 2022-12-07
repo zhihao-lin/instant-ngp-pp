@@ -1,0 +1,28 @@
+root_dir = ./tnt/Playground
+dataset_name = tnt
+exp_name = Playground_scale8_dL_embeda6_2Hash_seg_ref_randdir_1
+batch_size = 1024
+scale = 8.0
+num_epochs = 150
+
+### render a camera path(through interpolation between poses)
+render_path = True 
+
+### render camera poses from training dataset
+render_train = True
+
+render_rgb = True
+render_depth = True
+
+### render derived normal or not
+render_normal = True
+
+### render semantic labels or not, set to False if no g.t. semantic labels
+render_semantic = True
+
+### appearance embeddings
+embed_a = True
+embed_a_len = 6
+
+random_bg = True
+### optimize_ext = True

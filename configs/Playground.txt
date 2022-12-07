@@ -1,0 +1,30 @@
+root_dir = ./tnt/Playground
+dataset_name = tnt
+exp_name = Playground
+batch_size = 1024
+scale = 8.0
+num_epochs = 150
+
+### render a camera path(through interpolation between poses)
+render_path = True 
+
+### render camera poses from training dataset
+render_train = False
+
+render_rgb = True
+render_depth = False
+
+### render derived normal or not
+render_normal = False
+
+### render semantic labels or not, set to False if no g.t. semantic labels
+render_semantic = False
+
+### appearance embeddings
+embed_a = True
+embed_a_len = 8
+
+### mask embeddings
+embed_msk = True
+
+random_bg = True
