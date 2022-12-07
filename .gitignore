@@ -2,6 +2,7 @@
 results/
 output/
 ckpts/
+logs/
 
 __pycache__/
 *.py[cod]

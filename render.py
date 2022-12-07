@@ -14,7 +14,6 @@ from datasets.ray_utils import get_rays
 from utils import load_ckpt
 from opt import get_opts
 from einops import rearrange
-from simulate import get_simulator
 
 def depth2img(depth):
     # depth = (depth-depth.min())/(depth.max()-depth.min())
@@ -124,33 +123,6 @@ def render_for_test(hparams, split='test'):
 
     frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames'
     os.makedirs(frames_dir, exist_ok=True)
-    if hparams.simulate:
-        simulate_kwargs = {
-            'depth_bound': hparams.depth_bound,
-            'sigma': hparams.sigma,
-            'rgb': hparams.rgb, 
-            'depth_path': hparams.depth_path,
-            # water params
-            'water_height': hparams.water_height,
-            'plane_path': hparams.plane_path,
-            'refraction_idx': hparams.refraction_idx,
-            'guided_filter': hparams.chunk_size < 0,
-            'gf_r': hparams.gf_r,
-            'gf_eps': hparams.gf_eps, 
-            'pano_path': hparams.pano_path,
-            'v_forward': hparams.v_forward,
-            'v_down': hparams.v_down,
-            'v_right': hparams.v_right,
-            'theta': hparams.gl_theta,
-            'sharpness': hparams.gl_sharpness, 
-            'wave_len': hparams.wave_len,
-            'wave_ampl': hparams.wave_ampl
-        }
-        simulator = get_simulator(
-            effect=hparams.simulate,
-            device='cuda',
-            **simulate_kwargs
-        )
 
     frame_series = []
     frame_up_series = []
@@ -183,9 +155,6 @@ def render_for_test(hparams, split='test'):
             render_kwargs['exp_step_factor'] = 1/256
         if hparams.embed_a:
             render_kwargs['embedding_a'] = embedding_a
-        if hparams.simulate:
-            render_kwargs['simulator'] = simulator
-            render_kwargs['simulate_effect'] = hparams.simulate
 
         rays_o = rays[:, :3]
         rays_d = rays[:, 3:6]
