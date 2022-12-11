@@ -132,3 +132,17 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+./tnt/
+./360/
+./ckpts/
+./data/
+./logs/
+./results/
+README.md
+360
+results
+tnt
+logs
+ckpts
+data
