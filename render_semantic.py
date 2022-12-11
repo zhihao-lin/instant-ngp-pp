@@ -10,7 +10,7 @@ import cv2
 from tqdm import trange
 from models.network_distill import NGP_distill
 from models.networks_sem_2 import NGP, Normal
-from models.rendering_ import render
+from models.rendering import render
 from datasets import dataset_dict
 from datasets.ray_utils import get_rays
 from utils import load_ckpt

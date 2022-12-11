@@ -60,7 +60,7 @@ class MegaDataset(BaseDataset):
         self.rays  = torch.stack(rays)  #(N, H*W, 3)
 
         render_poses = generate_interpolated_path(poses.numpy(), n_interp=4)
-        self.render_path_rays = self.get_path_rays(render_poses)
+        self.render_traj_rays = self.get_path_rays(render_poses)
 
     def get_path_rays(self, c2w_list):
         rays = {}
@@ -85,7 +85,7 @@ def test_dataset():
 
     print('poses:', dataset.poses.size())
     print('rays:', dataset.rays.size())
-    print('render_path_rays:', dataset.render_path_rays.keys())
+    print('render_traj_rays:', dataset.render_traj_rays.keys())
     poses = dataset.poses 
     cam_position = poses[:,:,-1]
     print(torch.mean(cam_position, dim=0))

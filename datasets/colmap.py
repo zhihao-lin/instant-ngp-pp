@@ -171,7 +171,7 @@ class ColmapDataset(BaseDataset):
                 
                 img_paths = [x for i, x in enumerate(img_paths) if i%8==0]
                 self.poses = np.array([x for i, x in enumerate(self.poses) if i%8==0])
-                if kwargs.get('render_path', False):
+                if kwargs.get('render_traj', False):
                     # render_c2w_f64 = create_spheric_poses(1.2, self.poses[:, 1, 3].mean())
                     # render_c2w_f64 = torch.FloatTensor(render_c2w_f64)
                     render_c2w_f64 = generate_interpolated_path(self.poses, 120)[400:800]
@@ -234,7 +234,7 @@ class ColmapDataset(BaseDataset):
             self.labels = torch.LongTensor(np.stack(self.labels))
         
         if split=='test':
-            self.render_path_rays = self.get_path_rays(render_c2w_f64)
+            self.render_traj_rays = self.get_path_rays(render_c2w_f64)
             
     def get_path_rays(self, c2w_list):
         rays = {}

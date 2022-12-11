@@ -216,7 +216,7 @@ class KittiDataset(BaseDataset):
         self.depths_2d = torch.FloatTensor(np.stack(depths))
         render_c2w_f64 = generate_interpolated_path(self.poses.numpy(), 120)[:400]
         self.c2w = render_c2w_f64
-        self.render_path_rays = self.get_path_rays(render_c2w_f64)
+        self.render_traj_rays = self.get_path_rays(render_c2w_f64)
         
     def get_path_rays(self, c2w_list):
         rays = {}
@@ -242,7 +242,7 @@ if __name__ == '__main__':
         'train_frames': 64,
         'center_pose': [1040.42271023, 3738.8884705, 115.89219779],
         'val_list': [1915, 1925, 1935, 1945, 1955, 1965],
-        'render_path': True,
+        'render_traj': True,
     }
     dataset = KittiDataset(
         split='test',

@@ -12,7 +12,7 @@ center_pose = [1130.46719983, 3969.92954086, 115.97836078]
 val_list = [1545,1555,1565,1575,1585,1595]
 
 ### render a camera path(through interpolation between poses)
-render_path = True 
+render_traj = True 
 
 ### render camera poses from training dataset
 render_train = False

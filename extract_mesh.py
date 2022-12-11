@@ -6,7 +6,7 @@ import torchvision.transforms as T
 import torch.nn.functional as F
 import plyfile
 import skimage.measure
-from models.networks_sem_4 import NGP, Normal
+from models.networks import NGP, Normal
 from opt import get_opts
 from utils import load_ckpt
 
@@ -79,7 +79,7 @@ model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox,
 ckpt_path = hparams.ckpt_path
 
 print(f'ckpt specified: {ckpt_path} !')
-load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'normal_net.params'])
+load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
 
 x_min, x_max = -1, 1
 y_min, y_max = -0.3, 0.15

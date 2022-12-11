@@ -122,8 +122,6 @@ std::vector<torch::Tensor> composite_train_fw(
     const torch::Tensor sigmas,
     const torch::Tensor rgbs,
     const torch::Tensor normals_pred,
-    const torch::Tensor normals_raw,
-    const torch::Tensor up_sems,
     const torch::Tensor sems,
     const torch::Tensor deltas,
     const torch::Tensor ts,
@@ -134,26 +132,21 @@ std::vector<torch::Tensor> composite_train_fw(
     CHECK_INPUT(sigmas);
     CHECK_INPUT(rgbs);
     CHECK_INPUT(normals_pred);
-    CHECK_INPUT(normals_raw);
-    CHECK_INPUT(up_sems);
     CHECK_INPUT(sems);
     CHECK_INPUT(deltas);
     CHECK_INPUT(ts);
     CHECK_INPUT(rays_a);
 
     return composite_train_fw_cu(
-                sigmas, rgbs, normals_pred, normals_raw, up_sems, sems, deltas, ts,
+                sigmas, rgbs, normals_pred, sems, deltas, ts,
                 rays_a, opacity_threshold, classes);
 }
-
-
 
 std::vector<torch::Tensor> composite_train_bw(
     const torch::Tensor dL_dopacity,
     const torch::Tensor dL_ddepth,
     const torch::Tensor dL_drgb,
     const torch::Tensor dL_dnormal_pred,
-    const torch::Tensor dL_dup_sem,
     const torch::Tensor dL_dsem,
     const torch::Tensor dL_dws,
     const torch::Tensor sigmas,
@@ -174,7 +167,6 @@ std::vector<torch::Tensor> composite_train_bw(
     CHECK_INPUT(dL_ddepth);
     CHECK_INPUT(dL_drgb);
     CHECK_INPUT(dL_dnormal_pred);
-    CHECK_INPUT(dL_dup_sem);
     CHECK_INPUT(dL_dsem);
     CHECK_INPUT(dL_dws);
     CHECK_INPUT(sigmas);
@@ -190,7 +182,7 @@ std::vector<torch::Tensor> composite_train_bw(
     CHECK_INPUT(normal_pred);
 
     return composite_train_bw_cu(
-                dL_dopacity, dL_ddepth, dL_drgb, dL_dnormal_pred, dL_dup_sem, dL_dsem, dL_dws,
+                dL_dopacity, dL_ddepth, dL_drgb, dL_dnormal_pred, dL_dsem, dL_dws,
                 sigmas, rgbs, normals_pred, ws, deltas, ts, rays_a,
                 opacity, depth, rgb, normal_pred, opacity_threshold, classes);
 }
@@ -252,7 +244,6 @@ void composite_test_fw(
     const torch::Tensor rgbs,
     const torch::Tensor normals,
     const torch::Tensor normals_raw,
-    const torch::Tensor up_sems,
     const torch::Tensor sems,
     const torch::Tensor deltas,
     const torch::Tensor ts,
@@ -266,14 +257,12 @@ void composite_test_fw(
     torch::Tensor rgb,
     torch::Tensor normal,
     torch::Tensor normal_raw,
-    torch::Tensor up_sem,
     torch::Tensor sem
 ){
     CHECK_INPUT(sigmas);
     CHECK_INPUT(rgbs);
     CHECK_INPUT(normals);
     CHECK_INPUT(normals_raw);
-    CHECK_INPUT(up_sems);
     CHECK_INPUT(sems);
     CHECK_INPUT(deltas);
     CHECK_INPUT(ts);
@@ -285,56 +274,13 @@ void composite_test_fw(
     CHECK_INPUT(rgb);
     CHECK_INPUT(normal);
     CHECK_INPUT(normal_raw);
-    CHECK_INPUT(up_sem);
     CHECK_INPUT(sem);
 
     composite_test_fw_cu(
-        sigmas, rgbs, normals, normals_raw, up_sems, sems, 
+        sigmas, rgbs, normals, normals_raw, sems, 
         deltas, ts, hits_t, alive_indices,
         T_threshold, classes, N_eff_samples,
-        opacity, depth, rgb, normal, normal_raw, up_sem, sem);
-}
-
-void composite_mb_test_fw(
-    const torch::Tensor sigmas,
-    const torch::Tensor rgbs,
-    const torch::Tensor normals,
-    const torch::Tensor sems,
-    const torch::Tensor deltas,
-    const torch::Tensor ts,
-    const torch::Tensor hits_t,
-    const torch::Tensor alive_indices,
-    const float T_threshold,
-    const int classes,
-    const torch::Tensor N_eff_samples,
-    torch::Tensor opacity,
-    torch::Tensor depth,
-    torch::Tensor rgb,
-    torch::Tensor normal,
-    torch::Tensor sem,
-    torch::Tensor weight
-){
-    CHECK_INPUT(sigmas);
-    CHECK_INPUT(rgbs);
-    CHECK_INPUT(normals);
-    CHECK_INPUT(sems);
-    CHECK_INPUT(deltas);
-    CHECK_INPUT(ts);
-    CHECK_INPUT(hits_t);
-    CHECK_INPUT(alive_indices);
-    CHECK_INPUT(N_eff_samples);
-    CHECK_INPUT(opacity);
-    CHECK_INPUT(depth);
-    CHECK_INPUT(rgb);
-    CHECK_INPUT(normal);
-    CHECK_INPUT(sem);
-    CHECK_INPUT(weight);
-
-    composite_mb_test_fw_cu(
-        sigmas, rgbs, normals, sems, 
-        deltas, ts, hits_t, alive_indices,
-        T_threshold, classes, N_eff_samples,
-        opacity, depth, rgb, normal, sem, weight);
+        opacity, depth, rgb, normal, normal_raw, sem);
 }
 
 std::vector<torch::Tensor> distortion_loss_fw(
@@ -390,7 +336,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m){
     m.def("composite_refloss_fw", &composite_refloss_fw);
     m.def("composite_refloss_bw", &composite_refloss_bw);
     m.def("composite_test_fw", &composite_test_fw);
-    m.def("composite_mb_test_fw", &composite_mb_test_fw);
 
     m.def("distortion_loss_fw", &distortion_loss_fw);
     m.def("distortion_loss_bw", &distortion_loss_bw);

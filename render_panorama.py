@@ -8,8 +8,8 @@ except ModuleNotFoundError:
     import imageio
 import numpy as np
 from tqdm import trange
-from models.networks_sem_4 import NGP
-from models.rendering_ import render
+from models.networks import NGP
+from models.rendering import render
 from datasets import dataset_dict
 from datasets.ray_utils import get_rays
 from utils import load_ckpt
@@ -65,10 +65,7 @@ def render_panorama(hparams):
     os.makedirs(dir_out, exist_ok=True)
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
     model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len).cuda()
-    if hparams.ckpt_load:
-        ckpt_path = hparams.ckpt_load
-    else: 
-        ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
+    ckpt_path = hparams.weight_path
 
     load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'normal_net', 'directions', 'density_grid', 'grid_coords'])
     print('Loaded checkpoint: {}'.format(ckpt_path))

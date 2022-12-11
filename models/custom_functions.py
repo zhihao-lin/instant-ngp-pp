@@ -137,31 +137,30 @@ class VolumeRenderer(torch.autograd.Function):
     """
     @staticmethod
     # @custom_fwd(cast_inputs=torch.float32)
-    def forward(ctx, sigmas, rgbs, normals_pred, normals_raw, up_sems, sems, deltas, ts, rays_a, T_threshold, classes):
-        total_samples, opacity, depth, rgb, normal_pred, normal_raw, up_sem, sem, ws = \
-            vren.composite_train_fw(sigmas, rgbs, normals_pred, normals_raw, up_sems, sems, deltas, ts,
+    def forward(ctx, sigmas, rgbs, normals_pred, sems, deltas, ts, rays_a, T_threshold, classes):
+        total_samples, opacity, depth, rgb, normal_pred, sem, ws = \
+            vren.composite_train_fw(sigmas, rgbs, normals_pred, sems, deltas, ts,
                                     rays_a, T_threshold, classes)
         ctx.save_for_backward(sigmas, rgbs, normals_pred, deltas, ts, rays_a,
                               opacity, depth, rgb, normal_pred, ws)
         ctx.T_threshold = T_threshold
         ctx.classes = classes
-        return total_samples.sum(), opacity, depth, rgb, normal_pred, normal_raw, up_sem, sem, ws
+        return total_samples.sum(), opacity, depth, rgb, normal_pred, sem, ws
 
     @staticmethod
     # @custom_bwd
-    def backward(ctx, dL_dtotal_samples, dL_dopacity, dL_ddepth, dL_drgb, dL_dnormal_pred, dL_dnormal_raw, dL_dup_sem, dL_dsem, dL_dws):
-        # print(dL_drgb)
+    def backward(ctx, dL_dtotal_samples, dL_dopacity, dL_ddepth, dL_drgb, dL_dnormal_pred, dL_dsem, dL_dws):
         sigmas, rgbs, normals_pred, deltas, ts, rays_a, \
         opacity, depth, rgb, normal_pred, ws = ctx.saved_tensors
-        dL_dsigmas, dL_drgbs, dL_dnormals_pred, dL_dup_sems, dL_dsems = \
+        dL_dsigmas, dL_drgbs, dL_dnormals_pred, dL_dsems = \
             vren.composite_train_bw(dL_dopacity, dL_ddepth,
-                                    dL_drgb, dL_dnormal_pred, dL_dup_sem, dL_dsem, dL_dws,
+                                    dL_drgb, dL_dnormal_pred, dL_dsem, dL_dws,
                                     sigmas, rgbs, normals_pred, ws, deltas, ts,
                                     rays_a,
                                     opacity, depth, rgb, normal_pred,
                                     ctx.T_threshold, ctx.classes)
-        # print(dL_drgbs)
-        return dL_dsigmas, dL_drgbs, dL_dnormals_pred, None, dL_dup_sems, dL_dsems, None, None, None, None, None
+        
+        return dL_dsigmas, dL_drgbs, dL_dnormals_pred, dL_dsems, None, None, None, None, None
 
 class RefLoss(torch.autograd.Function):
     @staticmethod

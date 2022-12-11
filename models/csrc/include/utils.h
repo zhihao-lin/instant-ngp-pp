@@ -3,8 +3,8 @@
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
-// #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
-#define CHECK_INPUT(x) CHECK_CUDA(x)
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
+// #define CHECK_INPUT(x) CHECK_CUDA(x)
 
 
 std::vector<torch::Tensor> ray_aabb_intersect_cu(
@@ -75,8 +75,6 @@ std::vector<torch::Tensor> composite_train_fw_cu(
     const torch::Tensor sigmas,
     const torch::Tensor rgbs,
     const torch::Tensor normals_pred,
-    const torch::Tensor normals_raw,
-    const torch::Tensor up_sems,
     const torch::Tensor sems,
     const torch::Tensor deltas,
     const torch::Tensor ts,
@@ -91,7 +89,6 @@ std::vector<torch::Tensor> composite_train_bw_cu(
     const torch::Tensor dL_ddepth,
     const torch::Tensor dL_drgb,
     const torch::Tensor dL_dnormal_pred,
-    const torch::Tensor dL_dup_sem,
     const torch::Tensor dL_dsem,
     const torch::Tensor dL_dws,
     const torch::Tensor sigmas,
@@ -140,7 +137,6 @@ void composite_test_fw_cu(
     const torch::Tensor rgbs,
     const torch::Tensor noramls,
     const torch::Tensor noramls_raw,
-    const torch::Tensor up_sems,
     const torch::Tensor sems,
     const torch::Tensor deltas,
     const torch::Tensor ts,
@@ -154,28 +150,7 @@ void composite_test_fw_cu(
     torch::Tensor rgb,
     torch::Tensor normal,
     torch::Tensor normal_raw,
-    torch::Tensor up_sem,
     torch::Tensor sem
-);
-
-void composite_mb_test_fw_cu(
-    const torch::Tensor sigmas,
-    const torch::Tensor rgbs,
-    const torch::Tensor noramls,
-    const torch::Tensor sems,
-    const torch::Tensor deltas,
-    const torch::Tensor ts,
-    const torch::Tensor hits_t,
-    const torch::Tensor alive_indices,
-    const float T_threshold,
-    const int classes,
-    const torch::Tensor N_eff_samples,
-    torch::Tensor opacity,
-    torch::Tensor depth,
-    torch::Tensor rgb,
-    torch::Tensor normal,
-    torch::Tensor sem,
-    torch::Tensor weight
 );
 
 std::vector<torch::Tensor> distortion_loss_fw_cu(

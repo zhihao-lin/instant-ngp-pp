@@ -11,3 +11,9 @@ scipy
 pymcubes
 trimesh
 dearpygui
+ConfigArgParse
+pyarrow
+plyfile
+scikit-image
+vedo
+ipdb

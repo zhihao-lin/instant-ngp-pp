@@ -7,6 +7,7 @@ import imageio
 import numpy as np
 import cv2
 import random
+import math
 from einops import rearrange
 
 # data
@@ -16,10 +17,9 @@ from datasets.ray_utils import axisangle_to_R, get_rays
 
 # models
 from kornia.utils.grid import create_meshgrid3d
-# from models.networks import NGP, Normal
-from models.networks_sem_4 import NGP, Normal
+from models.networks import NGP
 from models.implicit_mask import implicit_mask
-from models.rendering_ import render, MAX_SAMPLES
+from models.rendering import render, MAX_SAMPLES
 from models.global_var import global_var
 
 # optimizer, losses
@@ -56,9 +56,8 @@ from torch import autograd
 import warnings; warnings.filterwarnings("ignore")
 
 
-def depth2img(depth):
-    # depth = (depth-depth.min())/(depth.max()-depth.min())
-    depth = depth/16
+def depth2img(depth, scale=16):
+    depth = depth/scale
     depth = np.clip(depth, a_min=0., a_max=1.)
     depth_img = cv2.applyColorMap((depth*255).astype(np.uint8),
                                   cv2.COLORMAP_TURBO)
@@ -72,10 +71,8 @@ def mask2img(mask):
     return mask_img
 
 def semantic2img(sem_label, classes):
-    # depth = (depth-depth.min())/(depth.max()-depth.min())
     level = 1/(classes-1)
     sem_color = level * sem_label
-    # depth = np.clip(depth, a_min=0., a_max=1.)
     sem_color = cv2.applyColorMap((sem_color*255).astype(np.uint8),
                                   cv2.COLORMAP_TURBO)
 
@@ -100,23 +97,17 @@ class NeRFSystem(LightningModule):
                 p.requires_grad = False
                         
         rgb_act = 'None' if self.hparams.use_exposure else 'Sigmoid'
-        self.normal_model = None
         self.model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len)
-        if hparams.normal_distillation:
-            self.normal_model = Normal()
         if hparams.embed_msk:
             self.msk_model = implicit_mask()
             
-        ###
+        ### setup appearance embeddings
         img_dir_name = None
-        if hparams.climate is not None:
-            img_dir_name = 'climate/{}'.format(hparams.climate)
-        elif os.path.exists(os.path.join(hparams.root_dir, 'images')):
+        if os.path.exists(os.path.join(hparams.root_dir, 'images')):
             img_dir_name = 'images'
         elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
             img_dir_name = 'rgb'
 
-        
         if hparams.dataset_name == 'kitti':
             self.N_imgs = 2 * hparams.train_frames
         elif hparams.dataset_name == 'mega':
@@ -126,7 +117,6 @@ class NeRFSystem(LightningModule):
         
         if hparams.embed_a:
             self.embedding_a = torch.nn.Embedding(self.N_imgs, hparams.embed_a_len) 
-        
         ###
         
         G = self.model.grid_size
@@ -165,9 +155,7 @@ class NeRFSystem(LightningModule):
                   'render_rgb': hparams.render_rgb,
                   'render_depth': hparams.render_depth,
                   'render_normal': hparams.render_normal,
-                  'render_up_sem': hparams.render_normal_up,
                   'render_sem': hparams.render_semantic,
-                  'distill_normal': self.global_step//1000>=self.hparams.num_epochs and self.hparams.normal_distillation,
                   'img_wh': self.img_wh}
         if self.hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
             kwargs['exp_step_factor'] = 1/256
@@ -179,11 +167,7 @@ class NeRFSystem(LightningModule):
         if split == 'train':
             return render(self.model, rays_o, rays_d, **kwargs)
         else:
-            # import ipdb; ipdb.set_trace()
-            chunk_size = 8192*16
-            # w, h = rays_o.shape[0], rays_o.shape[1]
-            # rays_o_flat = rays_o.reshape(-1, 3)
-            # rays_d_flat = rays_d.reshape(-1, 3)
+            chunk_size = self.hparams.chunk_size
             all_ret = {}
             for i in range(0, rays_o.shape[0], chunk_size):
                 ret = render(self.model, rays_o[i:i+chunk_size], rays_d[i:i+chunk_size], **kwargs)
@@ -191,12 +175,10 @@ class NeRFSystem(LightningModule):
                     if k not in all_ret:
                         all_ret[k] = []
                     all_ret[k].append(ret[k])
-            # import ipdb; ipdb.set_trace()
             for k in all_ret:
                 if k in ['total_samples']:
                     continue
                 all_ret[k] = torch.cat(all_ret[k], 0)
-            # all_ret = {k: torch.cat(all_ret[k], 0) for k in all_ret and k not in ['total_samples']}
             all_ret['total_samples'] = torch.sum(torch.tensor(all_ret['total_samples']))
             return all_ret
                 
@@ -206,9 +188,7 @@ class NeRFSystem(LightningModule):
         kwargs = {'root_dir': self.hparams.root_dir,
                   'downsample': self.hparams.downsample,
                   'use_sem': self.hparams.render_semantic,
-                  'use_upLabel': self.hparams.render_normal_up,
-                  'depth_mono': self.hparams.depth_mono,
-                  'climate': self.hparams.climate}
+                  'depth_mono': self.hparams.depth_mono}
 
         if self.hparams.dataset_name == 'kitti':
             kwargs['scene'] = self.hparams.kitti_scene
@@ -233,15 +213,12 @@ class NeRFSystem(LightningModule):
         self.test_dataset = dataset(split='test', **kwargs)
         
         self.img_wh = self.test_dataset.img_wh
-
-    def configure_optimizers(self):
+        
         # define additional parameters
         self.register_buffer('directions', self.train_dataset.directions.to(self.device))
-        if self.hparams.depth_smooth:
-            self.register_buffer('directions_xdx', self.train_dataset.directions_xdx.to(self.device))
-            self.register_buffer('directions_ydy', self.train_dataset.directions_ydy.to(self.device))
         self.register_buffer('poses', self.train_dataset.poses.to(self.device))
 
+    def configure_optimizers(self):
         if self.hparams.optimize_ext:
             N = len(self.train_dataset.poses)
             self.register_parameter('dR',
@@ -249,11 +226,11 @@ class NeRFSystem(LightningModule):
             self.register_parameter('dT',
                 nn.Parameter(torch.zeros(N, 3, device=self.device)))
         
-        ckpt_path = None
-        if hparams.ckpt_load:
-            ckpt_path = hparams.ckpt_load
-        load_ckpt(self.model, ckpt_path, prefixes_to_ignore=['embedding_a', 'normal_net'])
-        print('Loaded checkpoint: {}'.format(ckpt_path))
+        load_ckpt(self.model, self.hparams.weight_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
+        if self.hparams.embed_a:
+            load_ckpt(self.embedding_a, self.hparams.weight_path, model_name='embedding_a', prefixes_to_ignore=['model', 'msk_model'])
+        if self.hparams.embed_msk:
+            load_ckpt(self.msk_model, self.hparams.weight_path, model_name='msk_model', prefixes_to_ignore=['model', 'embedding_a'])
 
         net_params = []
         for n, p in self.named_parameters():
@@ -262,23 +239,13 @@ class NeRFSystem(LightningModule):
         opts = []
         # self.net_opt = FusedAdam(net_params, self.hparams.lr, eps=1e-8)
         self.net_opt = Adam(net_params, self.hparams.lr, eps=1e-8)
-        opts = [self.net_opt]
+        opts += [self.net_opt]
         if self.hparams.optimize_ext:
-            # learning rate is hard-coded
-            # pose_r_opt = FusedAdam([self.dR], 1e-6)
-            # pose_r_opt = Adam([self.dR], 1e-6)
-            # # pose_t_opt = FusedAdam([self.dT], 1e-6)
-            # pose_t_opt = Adam([self.dT], 1e-6)
-            # opts += [pose_r_opt, pose_t_opt]
-            # opts += [Adam([self.dR, self.dT], 1e-6)]
-            self.net_opt = Adam([{'params': net_params}, 
-                          {'params': [self.dR], 'lr': 1e-8},
-                          {'params': [self.dT], 'lr': 1e-8}], lr=self.hparams.lr, eps=1e-8)
-            opts = [self.net_opt]
+            opts += [Adam([self.dR, self.dT], 1e-6)]
             
         net_sch = CosineAnnealingLR(self.net_opt,
                                     self.hparams.num_epochs+self.hparams.normal_epochs,
-                                    self.hparams.lr/30)       
+                                    self.hparams.lr/30)      
 
         return opts, [net_sch]
 
@@ -303,14 +270,11 @@ class NeRFSystem(LightningModule):
             self.model.update_density_grid(0.01*MAX_SAMPLES/3**0.5,
                                         warmup=self.global_step<self.warmup_steps,
                                         erode=self.hparams.dataset_name=='colmap')
-            # if self.global_step>=self.warmup_steps:
-            #     uniform_density = self.model.uniform_sample()
 
         # with autograd.detect_anomaly():
         results = self(batch, split='train')
         
         if self.hparams.embed_msk:
-            # embedding_msk = self.embedding_msk(batch['img_idxs'])
             w, h = self.img_wh
             uv = torch.tensor(batch['uv']).cuda()
             img_idx = torch.tensor(batch['img_idxs']).cuda()
@@ -320,11 +284,8 @@ class NeRFSystem(LightningModule):
             uvi[:, 2] = (img_idx - self.N_imgs/2) / self.N_imgs
             mask = self.msk_model(uvi)
         
-        # import ipdb; ipdb.set_trace()
         loss_kwargs = {'dataset_name': self.hparams.dataset_name,
-                    'depth_smooth': self.hparams.depth_smooth if self.global_step//1000>=30 else False,
                     'uniform_density': uniform_density,
-                    'up_sem': False,
                     'normal_p': True,
                     'semantic': self.hparams.render_semantic,
                     'depth_mono': self.hparams.depth_mono,
@@ -346,23 +307,7 @@ class NeRFSystem(LightningModule):
         self.log('train/loss', loss)
         self.log('train/s_per_ray', results['total_samples']/len(batch['rgb']), True)
         self.log('train/psnr', self.train_psnr, True)
-        # self.log('train/grads_inf_cnt', results['gradinf_cnt'])
-        # self.log('train/Ro', results['Ro'].mean())
-        # self.log('train/Rp', results['Rp'].mean())
-        # if self.global_step%5000 == 0:
-        #     # for i in range(len(self.hparams.samples)):
-        #     xyz_samples = results['xyzs'].reshape(-1, 3).detach()
-        #     self.samples_points.append(xyz_samples.cpu().numpy())
-        #     self.samples_color_ = np.ones((xyz_samples.shape[0], 4))
-        #     self.samples_color_  = self.samples_color_*255
-        #     self.samples_color.append(self.samples_color_.astype(np.uint8))
-        #     self.samples_points = np.concatenate(self.samples_points, axis=0)
-        #     self.samples_color = np.concatenate(self.samples_color, axis=0)
-        #     point_cloud = trimesh.points.PointCloud(self.samples_points, self.samples_color)
-        #     point_cloud.export(os.path.join(f'logs/{hparams.dataset_name}/{hparams.exp_name}/test_samples_{self.global_step}.ply'))
-        #     self.samples_points = []
-        #     self.samples_color = []
-        if self.global_step%5000 == 0 and self.global_step>0 and False:
+        if self.global_step%10000 == 0 and self.global_step>0:
             print('[val in training]')
             w, h = self.img_wh
             
@@ -383,28 +328,25 @@ class NeRFSystem(LightningModule):
             # mask_pred = rearrange(mask_pred, 'h w c -> c h w', h=h)
             # tensorboard.add_image('img/mask_pred', mask_pred, self.global_step)
             
-            # import ipdb; ipdb.set_trace()
             batch = self.test_dataset[0]
             for i in batch:
                 if isinstance(batch[i], torch.Tensor):
                     batch[i] = batch[i].cuda()
             results = self(batch, split='test')
             rgb_pred = rearrange(results['rgb'], '(h w) c -> c h w', h=h)
-            # rgb_up_pred = rearrange(results['rgb+up'], '(h w) c -> c h w', h=h)
-            semantic_pred = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), self.hparams.get('classes', 7))
-            semantic_pred  = rearrange(semantic_pred , 'h w c -> c h w', h=h)
-            depth_pred = depth2img(rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h))
+            if hparams.render_semantic:
+                semantic_pred = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), self.hparams.get('classes', 7))
+                semantic_pred  = rearrange(semantic_pred , 'h w c -> c h w', h=h)
+            depth_pred = depth2img(rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h), scale=2*self.hparams.scale)
             depth_pred = rearrange(depth_pred, 'h w c -> c h w', h=h)
             normal_pred = rearrange((results['normal_pred']+1)/2, '(h w) c -> c h w', h=h)
-            # normal_raw = rearrange((results['normal_raw']+1)/2, '(h w) c -> c h w', h=h)
             rgb_gt = rearrange(batch['rgb'], '(h w) c -> c h w', h=h)
-            # normal_mono = rearrange(batch['normal_mono'], '(h w) c -> c h w', h=h)
+
             tensorboard.add_image('img/render', rgb_pred.cpu().numpy(), self.global_step)
-            # tensorboard.add_image('img/render+up', rgb_up_pred.cpu().numpy(), self.global_step)
-            tensorboard.add_image('img/semantic', semantic_pred, self.global_step)
+            if hparams.render_semantic:
+                tensorboard.add_image('img/semantic', semantic_pred, self.global_step)
             tensorboard.add_image('img/depth', depth_pred, self.global_step)
             tensorboard.add_image('img/normal_pred', normal_pred.cpu().numpy(), self.global_step)
-            # tensorboard.add_image('img/normal_raw', normal_raw.cpu().numpy(), self.global_step)
             tensorboard.add_image('img/gt', rgb_gt.cpu().numpy(), self.global_step)
             
 
@@ -414,10 +356,6 @@ class NeRFSystem(LightningModule):
             if params.grad is not None:
                 check_nan = torch.any(torch.isnan(params.grad))
                 check_inf = torch.any(torch.isinf(params.grad))
-            # tensorboard.add_histogram('train/{name}_grad', params.grad, self.global_step)
-                # if 'xyz_encoder' in name:
-                #     tensorboard.add_histogram(f'train/{name}_grad_max', params.grad, self.global_step)
-            # print(f'name {name}, grad_requires {params.requires_grad}, grad_value contains nan? {check_nan}, grad_value contains inf? {check_inf}')
             if check_inf or check_nan:
                 import ipdb; ipdb.set_trace()
 
@@ -428,6 +366,55 @@ class NeRFSystem(LightningModule):
         if not self.hparams.no_save_test:
             self.val_dir = f'results/{self.hparams.dataset_name}/{self.hparams.exp_name}'
             os.makedirs(self.val_dir, exist_ok=True)
+    
+    def validation_step(self, batch, batch_nb):
+        rgb_gt = batch['rgb']
+        results = self(batch, split='test')
+
+        logs = {}
+        # compute each metric per image
+        self.val_psnr(results['rgb'], rgb_gt)
+        logs['psnr'] = self.val_psnr.compute()
+        self.val_psnr.reset()
+
+        w, h = self.train_dataset.img_wh
+        rgb_pred = rearrange(results['rgb'], '(h w) c -> 1 c h w', h=h)
+        rgb_gt = rearrange(rgb_gt, '(h w) c -> 1 c h w', h=h)
+        self.val_ssim(rgb_pred, rgb_gt)
+        logs['ssim'] = self.val_ssim.compute()
+        self.val_ssim.reset()
+        if self.hparams.eval_lpips:
+            self.val_lpips(torch.clip(rgb_pred*2-1, -1, 1),
+                           torch.clip(rgb_gt*2-1, -1, 1))
+            logs['lpips'] = self.val_lpips.compute()
+            self.val_lpips.reset()
+
+        if not self.hparams.no_save_test: # save test image to disk
+            idx = batch['img_idxs']
+            rgb_pred = rearrange(results['rgb'].cpu().numpy(), '(h w) c -> h w c', h=h)
+            rgb_pred = (rgb_pred*255).astype(np.uint8)
+            depth = depth2img(rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h))
+            imageio.imsave(os.path.join(self.val_dir, f'{idx:03d}.png'), rgb_pred)
+            imageio.imsave(os.path.join(self.val_dir, f'{idx:03d}_d.png'), depth)
+
+        return logs
+    
+    def validation_epoch_end(self, outputs):
+        psnrs = torch.stack([x['psnr'] for x in outputs])
+        mean_psnr = all_gather_ddp_if_available(psnrs).mean()
+        print(f'test/mean_PSNR: {mean_psnr}')
+        self.log('test/psnr', mean_psnr)
+
+        ssims = torch.stack([x['ssim'] for x in outputs])
+        mean_ssim = all_gather_ddp_if_available(ssims).mean()
+        print(f'test/mean_SSIM: {mean_ssim}')
+        self.log('test/ssim', mean_ssim)
+
+        if self.hparams.eval_lpips:
+            lpipss = torch.stack([x['lpips'] for x in outputs])
+            mean_lpips = all_gather_ddp_if_available(lpipss).mean()
+            print(f'test/mean_LPIPS: {mean_lpips}')
+            self.log('test/lpips_vgg', mean_lpips)
 
     def get_progress_bar_dict(self):
         # don't show the version number
@@ -441,35 +428,25 @@ if __name__ == '__main__':
     torch.cuda.manual_seed_all(20220806)
     np.random.seed(20220806)
     hparams = get_opts()
-    autograd.set_detect_anomaly(True)
     global_var._init()
-    if hparams.val_only and (not hparams.ckpt_load):
+    if hparams.val_only and (not hparams.ckpt_path):
         raise ValueError('You need to provide a @ckpt_path for validation!')
-    if hparams.normal_distillation_only:
-        assert hparams.ckpt_load is not None, "No weight ckpt specified when distilling normals"
-        hparams.num_epochs = 0
-    if not hparams.normal_distillation:
-        hparams.normal_epochs = 0
     system = NeRFSystem(hparams)
 
-    if hparams.val_only:
-        render_for_test(hparams, split='train')
-        quit()
-
     ckpt_cb = ModelCheckpoint(dirpath=f'ckpts/{hparams.dataset_name}/{hparams.exp_name}',
-                              filename=hparams.ckpt_save.split('.')[0],
-                              save_weights_only=True,
-                              every_n_epochs=1,
-                              save_last=True,
-                              save_on_train_epoch_end=True)
+                              filename='{epoch:d}',
+                              save_weights_only=False,
+                              every_n_epochs=hparams.num_epochs,
+                              save_on_train_epoch_end=True,
+                              save_top_k=-1)
     callbacks = [ckpt_cb, TQDMProgressBar(refresh_rate=1)]
 
     logger = TensorBoardLogger(save_dir=f"logs/{hparams.dataset_name}",
                                name=hparams.exp_name,
                                default_hp_metric=False)
     
-    trainer = Trainer(max_epochs=hparams.num_epochs+hparams.normal_epochs,
-                      check_val_every_n_epoch=hparams.normal_epochs + hparams.num_epochs,
+    trainer = Trainer(max_epochs=hparams.num_epochs,
+                      check_val_every_n_epoch=hparams.num_epochs,
                       callbacks=callbacks,
                       logger=logger,
                       enable_model_summary=False,
@@ -479,15 +456,15 @@ if __name__ == '__main__':
                                if hparams.num_gpus>1 else None,
                       num_sanity_val_steps=-1 if hparams.val_only else 0,
                       precision=32,
-                      gradient_clip_val=50,
-                      detect_anomaly=True)
+                      gradient_clip_val=50)
 
-    trainer.fit(system)
+    trainer.fit(system, ckpt_path=hparams.ckpt_path)
 
-    # save slimmed ckpt for the last epoch
-    ckpt_ = slim_ckpt(os.path.join(f'ckpts/{hparams.dataset_name}/{hparams.exp_name}', 'last.ckpt'),
-            save_poses=hparams.optimize_ext)
-    torch.save(ckpt_, os.path.join(f'ckpts/{hparams.dataset_name}/{hparams.exp_name}', 'last_slim.ckpt'))
+    if not hparams.val_only: # save slimmed ckpt for the last epoch
+        ckpt_ = \
+            slim_ckpt(f'ckpts/{hparams.dataset_name}/{hparams.exp_name}/epoch={hparams.num_epochs-1}.ckpt',
+                      save_poses=hparams.optimize_ext)
+        torch.save(ckpt_, f'ckpts/{hparams.dataset_name}/{hparams.exp_name}/epoch={hparams.num_epochs-1}_slim.ckpt')
 
     if (not hparams.no_save_test) and \
        hparams.dataset_name=='nsvf' and \

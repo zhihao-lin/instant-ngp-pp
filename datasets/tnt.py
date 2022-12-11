@@ -27,10 +27,7 @@ class tntDataset(BaseDataset):
         img_dir_name = None 
         sem_dir_name = None 
         depth_dir_name = None
-        climate = kwargs.get('climate', None)
-        if climate is not None: 
-            img_dir_name = 'climate/{}'.format(climate)
-        elif os.path.exists(os.path.join(root_dir, 'images')):
+        if os.path.exists(os.path.join(root_dir, 'images')):
             img_dir_name = 'images'
         elif os.path.exists(os.path.join(root_dir, 'rgb')):
             img_dir_name = 'rgb'
@@ -75,9 +72,9 @@ class tntDataset(BaseDataset):
         
 ########################################################## get g.t. poses:
         
-        self.has_render_path = False
+        self.has_render_traj = False
         if split == "test" and not render_train:
-            self.has_render_path = os.path.exists(os.path.join(root_dir, 'camera_path'))
+            self.has_render_traj = os.path.exists(os.path.join(root_dir, 'camera_path'))
         all_c2w = []
         for pose_fname in poses:
             pose_path = pose_fname
@@ -109,7 +106,7 @@ class tntDataset(BaseDataset):
         scale = np.linalg.norm(norm_poses[..., 3], axis=-1).max()
         print(f"scene scale {scale}")
 ###########################################################
-        if self.has_render_path or render_train:
+        if self.has_render_traj or render_train:
             print("render camera path" if not render_train else "render train interpolation")
             all_render_c2w = []
             pose_names = [
@@ -169,7 +166,7 @@ class tntDataset(BaseDataset):
 ############################################################ normalize by camera
         c2w_f64[..., 3] /= scale
         
-        if self.has_render_path or render_train:
+        if self.has_render_traj or render_train:
             render_c2w_f64[..., 3] /= scale
         
         if kwargs.get('render_normal_mask', False):
@@ -197,8 +194,8 @@ class tntDataset(BaseDataset):
             if len(depths)>0:
                 self.depths_2d = self.read_depth(depths)
             
-            if self.has_render_path or render_train:
-                self.render_path_rays = self.get_path_rays(render_c2w_f64)
+            if self.has_render_traj or render_train:
+                self.render_traj_rays = self.get_path_rays(render_c2w_f64)
             if kwargs.get('render_normal_mask', False):
                 self.render_normal_rays = self.get_path_rays(render_normal_c2w_f64)
 
@@ -206,7 +203,6 @@ class tntDataset(BaseDataset):
         # rays = {} # {frame_idx: ray tensor}
         rays = []
         norms = []
-        norms_up = []
         labels = []
         
         if split == 'train': prefix = '0_'
@@ -278,7 +274,7 @@ if __name__ == '__main__':
 
     kwargs = {
         'root_dir': '../datasets/TanksAndTempleBG/Family',
-        'render_path': True,
+        'render_traj': True,
     }
     dataset = tntDataset(
         split='test',

@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch import nn
 import tinycudann as tcnn
 
@@ -7,8 +8,8 @@ class implicit_mask(nn.Module):
         super().__init__()
         
         # constants
-        L = 16; F = 2; log2_T = 19; N_min = 16
-        b = 1.5
+        L = 8; F = 2; log2_T = 16; N_min = 16
+        b = np.exp(np.log(2048/N_min)/(L-1))
         print(f'GridEncoding for mask: Nmin={N_min} b={b:.5f} F={F} T=2^{log2_T} L={L}')
 
         self.mask_encoder = \

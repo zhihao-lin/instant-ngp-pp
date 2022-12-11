@@ -8,8 +8,8 @@ except ModuleNotFoundError:
 import numpy as np
 import cv2
 from tqdm import trange
-from models.networks import NGP, Normal
-from models.rendering_old import render
+from models.networks import NGP
+from models.rendering import render
 from datasets import dataset_dict
 from datasets.ray_utils import get_rays
 from utils import load_ckpt
@@ -21,14 +21,12 @@ def render_for_test(hparams, split='test'):
     out_dir = os.path.join(hparams.root_dir, 'normal_up')
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
     model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len).cuda()
-    normal_model = Normal().cuda()
     if split=='train':
         ckpt_path = f'ckpts/{hparams.dataset_name}/{hparams.exp_name}/epoch={hparams.num_epochs+hparams.normal_epochs-1}_slim.ckpt'
     else:
         ckpt_path = hparams.ckpt_path        
     print(f'ckpt specified: {ckpt_path} !')
-    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'normal_net.params'])
-    load_ckpt(normal_model, ckpt_path, model_name='normal_model', prefixes_to_ignore=["embedding_a", "center", "xyz_min", "xyz_max", "half_size", "density_bitfield", "xyz_encoder.params", "dir_encoder.params", "rgb_net.params", "skybox_dir_encoder.params", "skybox_rgb_net.params"])
+    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
     if os.path.exists(os.path.join(hparams.root_dir, 'images')):
         img_dir_name = 'images'
     elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
@@ -40,7 +38,7 @@ def render_for_test(hparams, split='test'):
         if hparams.embed_a:
             embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda() 
             load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
-                prefixes_to_ignore=["center", "xyz_min", "xyz_max", "half_size", "density_bitfield", "xyz_encoder.params", "dir_encoder.params", "rgb_net.params", "skybox_dir_encoder.params", "skybox_rgb_net.params", "normal_net.params"])
+                prefixes_to_ignore=["model", "msk_model"])
             embedding_a = embedding_a(torch.tensor([0]).cuda())        
         
     dataset = dataset_dict[hparams.dataset_name]
@@ -49,12 +47,12 @@ def render_for_test(hparams, split='test'):
             'render_normal_mask': True}
     dataset = dataset(split='test', **kwargs)
     w, h = dataset.img_wh
-    render_path_rays = dataset.render_normal_rays
+    render_traj_rays = dataset.render_normal_rays
     
-    for img_idx in trange(len(render_path_rays)):
+    for img_idx in trange(len(render_traj_rays)):
         # if img_idx>0:
         #     break
-        rays = render_path_rays[img_idx][:, :6].cuda()
+        rays = render_traj_rays[img_idx][:, :6].cuda()
         render_kwargs = {'test_time': True,
                     'T_threshold': 1e-2,
                     'use_skybox': hparams.use_skybox,
