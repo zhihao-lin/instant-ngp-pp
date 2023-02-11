@@ -53,10 +53,10 @@ def render_for_test(hparams, split='test'):
     if hparams.use_skybox:
         print('render skybox!')
     model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len).cuda()
-    if split=='train':
-        ckpt_path = f'ckpts/{hparams.dataset_name}/{hparams.exp_name}/epoch={hparams.num_epochs-1}_slim.ckpt'
-    else:
-        ckpt_path = hparams.weight_path 
+    if hparams.ckpt_load:
+        ckpt_path = hparams.ckpt_load
+    else: 
+        ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
 
     load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
     print('Loaded checkpoint: {}'.format(ckpt_path))

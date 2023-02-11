@@ -94,10 +94,10 @@ def get_opts():
     # misc
     parser.add_argument('--exp_name', type=str, default='exp',
                         help='experiment name')
-    parser.add_argument('--ckpt_path', type=str, default=None,
+    parser.add_argument('--ckpt_load', type=str, default=None,
                         help='pretrained checkpoint to load (including optimizers, etc)')
-    parser.add_argument('--weight_path', type=str, default=None,
-                        help='pretrained checkpoint to load (excluding optimizers, etc)')
+    parser.add_argument('--ckpt_save', type=str, default='checkpoint.ckpt',
+                        help='pretrained checkpoint to save (including optimizers, etc)')
     
     # render
     parser.add_argument('--render_rgb', action='store_true', default=False,

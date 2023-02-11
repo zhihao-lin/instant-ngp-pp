@@ -226,11 +226,11 @@ class NeRFSystem(LightningModule):
             self.register_parameter('dT',
                 nn.Parameter(torch.zeros(N, 3, device=self.device)))
         
-        load_ckpt(self.model, self.hparams.weight_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
+        load_ckpt(self.model, self.hparams.ckpt_load, prefixes_to_ignore=['embedding_a', 'msk_model'])
         if self.hparams.embed_a:
-            load_ckpt(self.embedding_a, self.hparams.weight_path, model_name='embedding_a', prefixes_to_ignore=['model', 'msk_model'])
+            load_ckpt(self.embedding_a, self.hparams.ckpt_load, model_name='embedding_a', prefixes_to_ignore=['model', 'msk_model'])
         if self.hparams.embed_msk:
-            load_ckpt(self.msk_model, self.hparams.weight_path, model_name='msk_model', prefixes_to_ignore=['model', 'embedding_a'])
+            load_ckpt(self.msk_model, self.hparams.ckpt_load, model_name='msk_model', prefixes_to_ignore=['model', 'embedding_a'])
 
         net_params = []
         for n, p in self.named_parameters():
@@ -434,11 +434,11 @@ if __name__ == '__main__':
     system = NeRFSystem(hparams)
 
     ckpt_cb = ModelCheckpoint(dirpath=f'ckpts/{hparams.dataset_name}/{hparams.exp_name}',
-                              filename='{epoch:d}',
-                              save_weights_only=False,
-                              every_n_epochs=hparams.num_epochs,
-                              save_on_train_epoch_end=True,
-                              save_top_k=-1)
+                              filename=hparams.ckpt_save.split('.')[0],
+                              save_weights_only=True,
+                              every_n_epochs=1,
+                              save_last=True,
+                              save_on_train_epoch_end=True)
     callbacks = [ckpt_cb, TQDMProgressBar(refresh_rate=1)]
 
     logger = TensorBoardLogger(save_dir=f"logs/{hparams.dataset_name}",
@@ -458,13 +458,12 @@ if __name__ == '__main__':
                       precision=32,
                       gradient_clip_val=50)
 
-    trainer.fit(system, ckpt_path=hparams.ckpt_path)
+    trainer.fit(system)
 
-    if not hparams.val_only: # save slimmed ckpt for the last epoch
-        ckpt_ = \
-            slim_ckpt(f'ckpts/{hparams.dataset_name}/{hparams.exp_name}/epoch={hparams.num_epochs-1}.ckpt',
-                      save_poses=hparams.optimize_ext)
-        torch.save(ckpt_, f'ckpts/{hparams.dataset_name}/{hparams.exp_name}/epoch={hparams.num_epochs-1}_slim.ckpt')
+    # save slimmed ckpt for the last epoch
+    ckpt_ = slim_ckpt(os.path.join(f'ckpts/{hparams.dataset_name}/{hparams.exp_name}', 'last.ckpt'),
+            save_poses=hparams.optimize_ext)
+    torch.save(ckpt_, os.path.join(f'ckpts/{hparams.dataset_name}/{hparams.exp_name}', 'last_slim.ckpt'))
 
     if (not hparams.no_save_test) and \
        hparams.dataset_name=='nsvf' and \

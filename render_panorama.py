@@ -65,7 +65,7 @@ def render_panorama(hparams):
     os.makedirs(dir_out, exist_ok=True)
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
     model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len).cuda()
-    ckpt_path = hparams.weight_path
+    ckpt_path = hparams.ckpt_load
 
     load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'normal_net', 'directions', 'density_grid', 'grid_coords'])
     print('Loaded checkpoint: {}'.format(ckpt_path))
