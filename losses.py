@@ -112,8 +112,8 @@ class NeRFLoss(nn.Module):
             d['CELoss'] = self.lambda_semantic*self.CrossEntropyLoss(results['semantic'], target['label'])
             sky_mask = torch.where(target['label']==4, 1., 0.)
             d['sky_depth'] = self.lambda_sky*sky_mask*torch.exp(-results['depth'])
-        if kwargs.get('depth_mono', False): # for kitti360 dataset
-            depth_2d = target['depth'] / 25
+        if kwargs.get('depth_mono', False):
+            depth_2d = target['depth']
             mask = depth_2d>0
             weight = torch.zeros_like(depth_2d).cuda()
             weight[mask] = 1.

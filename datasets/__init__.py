@@ -6,6 +6,8 @@ from .nerf import NeRFDataset
 from .nerfpp import NeRFPPDataset
 from .kitti360 import KittiDataset
 from .mega_nerf.dataset import MegaDataset
+from .hm3d_abo import HM3DABODataset
+from .crop import CropDataset
 
 
 dataset_dict = {'nerf': NeRFDataset,
@@ -15,5 +17,7 @@ dataset_dict = {'nerf': NeRFDataset,
                 'tnt': tntDataset,
                 'nerfpp': NeRFPPDataset,
                 'kitti': KittiDataset,
-                'mega': MegaDataset
-}
+                'mega': MegaDataset,
+                'crop': CropDataset,
+                'hm3d_abo': HM3DABODataset
+                }

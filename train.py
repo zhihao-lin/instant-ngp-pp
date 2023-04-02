@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 import random
 import math
+from pathlib import Path
 from einops import rearrange
 
 # data
@@ -112,6 +113,10 @@ class NeRFSystem(LightningModule):
             self.N_imgs = 2 * hparams.train_frames
         elif hparams.dataset_name == 'mega':
             self.N_imgs = 1920 // 6
+        elif hparams.dataset_name == 'crop':
+            self.N_imgs = len(list(Path(hparams.root_dir).glob("im*")))
+        elif hparams.dataset_name == 'hm3d_abo':
+            self.N_imgs = len(list((Path(hparams.root_dir) / img_dir_name).glob("0_*")))
         else:
             self.N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
         
@@ -429,7 +434,7 @@ if __name__ == '__main__':
     np.random.seed(20220806)
     hparams = get_opts()
     global_var._init()
-    if hparams.val_only and (not hparams.ckpt_path):
+    if hparams.val_only and (not hparams.ckpt_load):
         raise ValueError('You need to provide a @ckpt_path for validation!')
     system = NeRFSystem(hparams)
 
@@ -446,7 +451,7 @@ if __name__ == '__main__':
                                default_hp_metric=False)
     
     trainer = Trainer(max_epochs=hparams.num_epochs,
-                      check_val_every_n_epoch=hparams.num_epochs,
+                      check_val_every_n_epoch=1,
                       callbacks=callbacks,
                       logger=logger,
                       enable_model_summary=False,

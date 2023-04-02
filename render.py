@@ -13,6 +13,8 @@ from datasets.ray_utils import get_rays
 from utils import load_ckpt
 from opt import get_opts
 from einops import rearrange
+from pathlib import Path
+
 
 def depth2img(depth, scale=16):
     depth = depth/scale
@@ -61,31 +63,38 @@ def render_for_test(hparams, split='test'):
     load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
     print('Loaded checkpoint: {}'.format(ckpt_path))
     
-    if os.path.exists(os.path.join(hparams.root_dir, 'images')):
+    if os.path.exists(os.path.join(hparams.test_root_dir, 'images')):
         img_dir_name = 'images'
-    elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
+    elif os.path.exists(os.path.join(hparams.test_root_dir, 'rgb')):
         img_dir_name = 'rgb'
+    else:
+        img_dir_name = ''
     
     if hparams.dataset_name == 'kitti':
         N_imgs = 2 * hparams.train_frames
     elif hparams.dataset_name == 'mega':
         N_imgs = 1920 // 6
+    elif hparams.dataset_name == 'hm3d_abo':
+        N_imgs = len(list((Path(hparams.root_dir) / img_dir_name).glob("0_*")))
+    elif hparams.dataset_name == 'crop':
+        N_imgs = len(list(Path(hparams.root_dir).glob("im*")))
     else:
         N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
     
     embed_a_length = hparams.embed_a_len
     if hparams.embed_a:
-        embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda() 
+        embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda()
         load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
             prefixes_to_ignore=["model", "msk_model"])
-        embedding_a = embedding_a(torch.tensor([0]).cuda())        
+        embedding_a = embedding_a(torch.tensor([0]).cuda())
         
     dataset = dataset_dict[hparams.dataset_name]
-    kwargs = {'root_dir': hparams.root_dir,
+    kwargs = {'root_dir': hparams.test_root_dir,
             'downsample': hparams.downsample,
             'render_train': hparams.render_train,
             'render_traj': hparams.render_traj,
-            'anti_aliasing_factor': hparams.anti_aliasing_factor}
+            'anti_aliasing_factor': hparams.anti_aliasing_factor,
+            'depth_mono': hparams.depth_mono}
     if hparams.dataset_name == 'kitti':
             kwargs['scene'] = hparams.kitti_scene
             kwargs['start'] = hparams.start

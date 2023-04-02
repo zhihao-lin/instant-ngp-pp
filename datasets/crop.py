@@ -3,9 +3,10 @@ import glob
 import numpy as np
 import os
 from PIL import Image
+from pathlib import Path
 from einops import rearrange
 from tqdm import tqdm
-
+import json
 from .ray_utils import *
 from .color_utils import read_image, read_normal, read_normal_up, read_semantic
 
@@ -15,7 +16,7 @@ def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
 
-class tntDataset(BaseDataset):
+class CropDataset(BaseDataset):
     def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, **kwargs):
         super().__init__(root_dir, split, downsample)
 
@@ -27,12 +28,8 @@ class tntDataset(BaseDataset):
         img_dir_name = None 
         sem_dir_name = None 
         depth_dir_name = None
-        if os.path.exists(os.path.join(root_dir, 'images')):
-            img_dir_name = 'images'
-        elif os.path.exists(os.path.join(root_dir, 'rgb')):
-            img_dir_name = 'rgb'
         
-        img_files = sorted(os.listdir(os.path.join(root_dir, img_dir_name)), key=sort_key)
+        img_files = list(sorted(Path(root_dir).glob("im*")))
         if os.path.exists(os.path.join(root_dir, 'semantic')):
             sem_dir_name = 'semantic'
         if os.path.exists(os.path.join(root_dir, 'depth')):
@@ -42,25 +39,37 @@ class tntDataset(BaseDataset):
         elif split == 'val': prefix = '1_'
         elif 'Synthetic' in self.root_dir: prefix = '2_'
         elif split == 'test': prefix = '1_' # test set for real scenes
-        
-        imgs = sorted(glob.glob(os.path.join(self.root_dir, img_dir_name, prefix+'*.png')), key=sort_key)
-        
+
         semantics = []
         if kwargs.get('use_sem', False):            
             semantics = sorted(glob.glob(os.path.join(self.root_dir, sem_dir_name, prefix+'*.pgm')), key=sort_key)
         depths = []
-        if kwargs.get('depth_mono', False):            
-            depths = sorted(glob.glob(os.path.join(self.root_dir, depth_dir_name, prefix+'*.npy')), key=sort_key)
-        poses = sorted(glob.glob(os.path.join(self.root_dir, 'pose', prefix+'*.txt')), key=sort_key)
-        
+        if kwargs.get('depth_mono', False):
+            depths = list(sorted(Path(root_dir).glob("dm*")))
+
+        with open(root_dir + "/metadata.json", "r") as f:
+            metadata = json.load(f)
+            poses = metadata["transform"] @ np.array(
+                [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+            all_c2w = [torch.from_numpy(np.array(pose)) for pose in poses]
+            fx = 533.3333
+            fy = 533.3333
+            cx = 192
+            cy = 192
+            width = 384
+            height = 384
+            self.K = np.array([
+                [fx, 0, cx],
+                [0, fy, cy],
+                [0, 0, 1]
+            ])
+
         for img_name in img_files:
-            img_file_path = os.path.join(root_dir, img_dir_name, img_name)
-            img = Image.open(img_file_path)
+            img = Image.open(str(img_name))
             w, h = img.width, img.height
             break
         
         w, h = int(w*downsample), int(h*downsample)
-        self.K = np.loadtxt(os.path.join(root_dir, 'intrinsics.txt'), dtype=np.float32)
         if self.K.shape[0]>4:
             self.K = self.K.reshape((4, 4))
         self.K = self.K[:3, :3]
@@ -74,17 +83,7 @@ class tntDataset(BaseDataset):
         
         self.has_render_traj = False
         if split == "test" and not render_train:
-            self.has_render_traj = os.path.exists(os.path.join(root_dir, 'camera_path'))
-        all_c2w = []
-        for pose_fname in poses:
-            pose_path = pose_fname
-            #  intrin_path = path.join(root, intrin_dir_name, pose_fname)
-            #  (right, down, forward)
-            cam_mtx = np.loadtxt(pose_path).reshape(-1, 4)
-            if len(cam_mtx) == 3:
-                bottom = np.array([[0.0, 0.0, 0.0, 1.0]])
-                cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
-            all_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
+            self.has_render_traj = True
 
         c2w_f64 = torch.stack(all_c2w)
         # center = c2w_f64[:, :3, 3].mean(axis=0)
@@ -93,37 +92,13 @@ class tntDataset(BaseDataset):
         self.up = -normalize(c2w_f64[:,:3,1].mean(0))
         print(f'up vector: {self.up}')
 ########################################################### scale the scene
-        norm_pose_files = sorted(
-            os.listdir(os.path.join(root_dir, 'pose')), key=sort_key
-        )
-        norm_poses = np.stack(
-            [
-                np.loadtxt(os.path.join(root_dir, 'pose', x)).reshape(-1, 4)
-                for x in norm_pose_files
-            ],
-            axis=0,
-        )
-        center = torch.mean(c2w_f64[..., 3], 0)
-        scale = np.linalg.norm(norm_poses[..., 3], axis=-1).max()
+
+        scale = np.linalg.norm(poses[..., 3], axis=-1).max()
         print(f"scene scale {scale}")
 ###########################################################
         if self.has_render_traj or render_train:
             print("render camera path" if not render_train else "render train interpolation")
-            all_render_c2w = []
-            pose_names = [
-                x
-                for x in os.listdir(os.path.join(root_dir, "camera_path/pose" if not render_train else "pose"))
-                if x.endswith(".txt")
-            ]
-            pose_names = sorted(pose_names, key=lambda x: int(x[-9:-4]))
-            for x in pose_names:
-                cam_mtx = np.loadtxt(os.path.join(root_dir, "camera_path/pose" if not render_train else "pose", x)).reshape(
-                    -1, 4
-                )
-                if len(cam_mtx) == 3:
-                    bottom = np.array([[0.0, 0.0, 0.0, 1.0]])
-                    cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
-                all_render_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
+            all_render_c2w = all_c2w
             render_c2w_f64 = torch.stack(all_render_c2w)
 ############ here we generate the test trajectories
 ############ we store the poses in render_c2w_f64
@@ -179,19 +154,19 @@ class tntDataset(BaseDataset):
             render_normal_c2w_f64 = render_normal_c2w_f64[:, :3]            
 ########################################################### gen rays
         classes = kwargs.get('classes', 7)
-        self.imgs = imgs
+        self.imgs = img_files
         if split.startswith('train'):
             if len(semantics)>0:
-                self.rays, self.labels = self.read_meta('train', imgs, c2w_f64, semantics, classes)
+                self.rays, self.labels = self.read_meta('train', img_files, c2w_f64, semantics, classes)
             else:
-                self.rays = self.read_meta('train', imgs, c2w_f64, semantics, classes)
+                self.rays = self.read_meta('train', img_files, c2w_f64, semantics, classes)
             if len(depths)>0:
                 self.depths_2d = self.read_depth(depths)
         else: # val, test
             if len(semantics)>0:
-                self.rays, self.labels = self.read_meta(split, imgs, c2w_f64, semantics, classes)
+                self.rays, self.labels = self.read_meta(split, img_files, c2w_f64, semantics, classes)
             else:
-                self.rays = self.read_meta(split, imgs, c2w_f64, semantics, classes)
+                self.rays = self.read_meta(split, img_files, c2w_f64, semantics, classes)
             if len(depths)>0:
                 self.depths_2d = self.read_depth(depths)
             
@@ -218,7 +193,7 @@ class tntDataset(BaseDataset):
                 c2w = np.array(c2w_list[idx][:3])
                 self.poses += [c2w]
 
-                img = read_image(img_path=img, img_wh=self.img_wh)
+                img = read_image(img_path=str(img), img_wh=self.img_wh)
                 if 'Jade' in self.root_dir or 'Fountain' in self.root_dir:
                     # these scenes have black background, changing to white
                     img[torch.all(img<=0.1, dim=-1)] = 1.0

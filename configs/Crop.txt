@@ -1,7 +1,7 @@
-root_dir = data/TanksAndTempleBG/Playground
-test_root_dir = data/TanksAndTempleBG/Playground_test
-dataset_name = tnt
-exp_name = playground
+root_dir = data/crop/collection_MT_PM_V93_Hordeum_01_density_0.4548898516408065_seed_0
+test_root_dir = data/crop/collection_MT_PM_V93_Hordeum_01_density_0.4548898516408065_seed_0_all
+dataset_name = crop
+exp_name = crop
 batch_size = 2048
 scale = 8.0
 num_epochs = 80
