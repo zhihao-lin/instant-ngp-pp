@@ -3,6 +3,7 @@ results/
 output/
 ckpts/
 logs/
+.idea
 
 __pycache__/
 *.py[cod]
