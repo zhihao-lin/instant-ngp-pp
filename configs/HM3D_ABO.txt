@@ -3,7 +3,7 @@ test_root_dir = data/HM3D-ABO/1K7P6ZQS4VM_B07HSF45BX_test
 dataset_name = hm3d_abo
 exp_name = hm3d_abo
 batch_size = 2048
-scale = 8.0
+scale = 2.0
 num_epochs = 80
 
 ### render a camera path(through interpolation between poses)

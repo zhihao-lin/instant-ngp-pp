@@ -451,7 +451,7 @@ if __name__ == '__main__':
                                default_hp_metric=False)
     
     trainer = Trainer(max_epochs=hparams.num_epochs,
-                      check_val_every_n_epoch=1,
+                      check_val_every_n_epoch=5,
                       callbacks=callbacks,
                       logger=logger,
                       enable_model_summary=False,

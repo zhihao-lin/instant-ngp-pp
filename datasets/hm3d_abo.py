@@ -53,14 +53,14 @@ class HM3DABODataset(BaseDataset):
         
 ########################################################## get g.t. poses:
         
-        self.has_render_traj = False #TODO:
+        self.has_render_traj = False
         if split == "test" and not render_train:
             self.has_render_traj = True # os.path.exists(os.path.join(root_dir, 'camera_path'))
 
 ###########################################################
         if self.has_render_traj or render_train:
             print("render camera path" if not render_train else "render train interpolation")
-            test_c2w_f64 = self.get_target_poses("1_", root_dir)
+            test_c2w_f64 = self.get_target_poses("", root_dir)
             test_c2w_f64[:, :3, 3] -= center
             test_c2w_f64[..., 3] /= scale
     
@@ -109,6 +109,8 @@ class HM3DABODataset(BaseDataset):
             prefix = '1_'
         elif split == 'test':
             prefix = '1_'  # test set for real scenes
+        else:
+            prefix = ''
         return prefix
 
     def get_img_wh(self, downsample, img_paths):

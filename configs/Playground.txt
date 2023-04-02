@@ -1,9 +1,9 @@
-root_dir = data/TanksAndTempleBG/Playground
-test_root_dir = data/TanksAndTempleBG/Playground_test
+root_dir = data/HM3D-ABO/1K7P6ZQS4VM_B07HSF45BX_train
+test_root_dir = data/HM3D-ABO/1K7P6ZQS4VM_B07HSF45BX_train
 dataset_name = tnt
 exp_name = playground
 batch_size = 2048
-scale = 8.0
+scale = 2.0
 num_epochs = 80
 
 ### render a camera path(through interpolation between poses)

@@ -165,13 +165,16 @@ class tntDataset(BaseDataset):
                 all_render_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
             render_normal_c2w_f64 = torch.stack(all_render_c2w)
 ############################################################ normalize by camera
+        # c2w_f64[..., 3] -= center
         c2w_f64[..., 3] /= scale
         
         if self.has_render_traj or render_train:
+            # render_c2w_f64[..., 3] -= center
+
             render_c2w_f64[..., 3] /= scale
         
         if kwargs.get('render_normal_mask', False):
-            render_normal_c2w_f64 /=scale
+            render_normal_c2w_f64 /= scale
                                     
         if kwargs.get('render_normal_mask', False):
             render_normal_c2w_f64 = np.array(render_normal_c2w_f64)

@@ -1,9 +1,9 @@
-root_dir = data/crop/collection_MT_PM_V93_Hordeum_01_density_0.4548898516408065_seed_0
-test_root_dir = data/crop/collection_MT_PM_V93_Hordeum_01_density_0.4548898516408065_seed_0_all
-dataset_name = crop
-exp_name = crop
+root_dir = data/crop/generated_dataset_Hordeum/collection_MT_PM_V93_Hordeum_01_density_0.4118944390178752_seed_59541
+test_root_dir = data/crop/generated_dataset_Hordeum/collection_MT_PM_V93_Hordeum_01_density_0.4118944390178752_seed_59541
+dataset_name = tnt
+exp_name = playground
 batch_size = 2048
-scale = 8.0
+scale = 2.0
 num_epochs = 80
 
 ### render a camera path(through interpolation between poses)
