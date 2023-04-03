@@ -45,7 +45,7 @@ class HM3DABODataset(BaseDataset):
 
         target_c2w_f64 = self.get_target_poses(prefix, root_dir)
         center, scale = self.get_pose_scale_and_center(root_dir)
-        target_c2w_f64[:, :3, 3] -= center
+        # target_c2w_f64[:, :3, 3] -= center
         target_c2w_f64[..., 3] /= scale
 
         self.get_intrinsics(root_dir, downsample)
@@ -61,7 +61,7 @@ class HM3DABODataset(BaseDataset):
         if self.has_render_traj or render_train:
             print("render camera path" if not render_train else "render train interpolation")
             test_c2w_f64 = self.get_target_poses("", root_dir)
-            test_c2w_f64[:, :3, 3] -= center
+            # test_c2w_f64[:, :3, 3] -= center
             test_c2w_f64[..., 3] /= scale
     
     ############ here we generate the test trajectories
@@ -121,7 +121,7 @@ class HM3DABODataset(BaseDataset):
         return h, w
 
     def get_intrinsics(self, root_dir, downsample):
-        with open(root_dir + "/intrinsic.txt", "r") as f:
+        with open(root_dir + "/intrinsics.txt", "r") as f:
             K = []
             for line in f.readlines():
                 K.append([float(num) for num in line.strip().split(" ")])
@@ -135,24 +135,16 @@ class HM3DABODataset(BaseDataset):
     def get_target_poses(self, prefix, root_dir):
         target_poses = []
         for pose_fn in sorted((Path(root_dir) / "pose").glob(prefix + "*.txt")):
-            with open(str(pose_fn), "r") as f:
-                pose = []
-                for line in f.readlines():
-                    pose.append([float(num) for num in line.strip().split(" ")])
-                pose = torch.from_numpy(np.array(pose))
-            target_poses.append(pose)
+            cam_mtx = np.loadtxt(pose_fn).reshape(-1, 4)
+            target_poses.append(torch.from_numpy(cam_mtx))
         target_c2w_f64 = torch.stack(target_poses)
         return target_c2w_f64
 
     def get_pose_scale_and_center(self, root_dir):
         all_poses = []
-        for pose_fn in sorted(os.listdir(root_dir + "/pose")):
-            with open(root_dir + f"/pose/{pose_fn}", "r") as f:
-                pose = []
-                for line in f.readlines():
-                    pose.append([float(num) for num in line.strip().split(" ")])
-                pose = torch.from_numpy(np.array(pose))
-            all_poses.append(pose)
+        for pose_fn in sorted((Path(root_dir) / "pose").glob("*.txt")):
+            cam_mtx = np.loadtxt(pose_fn).reshape(-1, 4)
+            all_poses.append(cam_mtx)
         center = np.stack(all_poses)[:, :3, 3].mean(axis=0)
         scale = np.linalg.norm(np.stack(all_poses)[..., 3], axis=-1).max()
         print(f"{self.split} scene scale {scale} center {center}")

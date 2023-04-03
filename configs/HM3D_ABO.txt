@@ -1,7 +1,7 @@
 root_dir = data/HM3D-ABO/1K7P6ZQS4VM_B07HSF45BX_train
-test_root_dir = data/HM3D-ABO/1K7P6ZQS4VM_B07HSF45BX_test
+test_root_dir = data/HM3D-ABO/1K7P6ZQS4VM_B07HSF45BX_train
 dataset_name = hm3d_abo
-exp_name = hm3d_abo
+exp_name = hm3d_abo_1K7P6ZQS4VM_B07HSF45BX
 batch_size = 2048
 scale = 2.0
 num_epochs = 80
@@ -26,6 +26,6 @@ embed_a = True
 embed_a_len = 8
 
 ### mask embeddings
-embed_msk = False
+embed_msk = True
 
 random_bg = True

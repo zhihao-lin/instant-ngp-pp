@@ -15,15 +15,13 @@ def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
 
-class tntDataset(BaseDataset):
+class HM3DDataset(BaseDataset):
     def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, **kwargs):
         super().__init__(root_dir, split, downsample)
+        self.split = split
+        prefix = self.get_split_prefix(split)
+        img_paths = list(sorted((Path(root_dir) / "rgb").glob(prefix+"*.jpg")))
 
-        def sort_key(x):
-            if len(x) > 2 and x[-10] == "_":
-                return x[-9:]
-            return x
-        
         img_dir_name = None 
         sem_dir_name = None 
         depth_dir_name = None
@@ -37,11 +35,7 @@ class tntDataset(BaseDataset):
             sem_dir_name = 'semantic'
         if os.path.exists(os.path.join(root_dir, 'depth')):
             depth_dir_name = 'depth'
-        
-        if split == 'train': prefix = '0_'
-        elif split == 'val': prefix = '1_'
-        elif 'Synthetic' in self.root_dir: prefix = '2_'
-        elif split == 'test': prefix = '1_' # test set for real scenes
+
         
         imgs = sorted(glob.glob(os.path.join(self.root_dir, img_dir_name, prefix+'*.jpg')), key=sort_key)
         if len(imgs) == 0:
