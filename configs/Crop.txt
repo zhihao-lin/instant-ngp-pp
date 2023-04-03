@@ -1,7 +1,7 @@
 root_dir = data/crop/generated_dataset_Hordeum/collection_MT_PM_V93_Hordeum_01_density_0.4118944390178752_seed_59541
 test_root_dir = data/crop/generated_dataset_Hordeum/collection_MT_PM_V93_Hordeum_01_density_0.4118944390178752_seed_59541
 dataset_name = tnt
-exp_name = playground
+exp_name = collection_MT_PM_V93_Hordeum_01_density_0.4118944390178752_seed_59541
 batch_size = 2048
 scale = 2.0
 num_epochs = 80

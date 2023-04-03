@@ -1,4 +1,4 @@
-from datasets.tnt import tntDataset
+# from datasets.tnt import tntDataset
 from .nsvf import NSVFDataset
 from .colmap import ColmapDataset
 from .tnt import tntDataset
@@ -15,7 +15,6 @@ dataset_dict = {'nerf': NeRFDataset,
                 'colmap': ColmapDataset,
                 'nerfpp': NeRFPPDataset,
                 'tnt': tntDataset,
-                'nerfpp': NeRFPPDataset,
                 'kitti': KittiDataset,
                 'mega': MegaDataset,
                 'crop': CropDataset,
