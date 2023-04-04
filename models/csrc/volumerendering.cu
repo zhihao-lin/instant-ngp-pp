@@ -120,6 +120,8 @@ std::vector<torch::Tensor> composite_train_fw_cu(
     const torch::Tensor rgbs,
     const torch::Tensor normals_pred,
     const torch::Tensor sems,
+    const torch::Tensor clips,
+    const torch::Tensor dinos,
     const torch::Tensor deltas,
     const torch::Tensor ts,
     const torch::Tensor rays_a,

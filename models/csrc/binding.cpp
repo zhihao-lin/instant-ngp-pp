@@ -142,7 +142,7 @@ std::vector<torch::Tensor> composite_train_fw(
     CHECK_INPUT(rays_a);
 
     return composite_train_fw_cu(
-                sigmas, rgbs, normals_pred, sems, deltas, ts,
+                sigmas, rgbs, normals_pred, sems, clips, dinos, deltas, ts,
                 rays_a, opacity_threshold, classes);
 }
 
