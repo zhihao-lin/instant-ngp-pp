@@ -123,6 +123,8 @@ std::vector<torch::Tensor> composite_train_fw(
     const torch::Tensor rgbs,
     const torch::Tensor normals_pred,
     const torch::Tensor sems,
+    const torch::Tensor clips,
+    const torch::Tensor dinos,
     const torch::Tensor deltas,
     const torch::Tensor ts,
     const torch::Tensor rays_a,
@@ -133,6 +135,8 @@ std::vector<torch::Tensor> composite_train_fw(
     CHECK_INPUT(rgbs);
     CHECK_INPUT(normals_pred);
     CHECK_INPUT(sems);
+    CHECK_INPUT(clips);
+    CHECK_INPUT(dinos);
     CHECK_INPUT(deltas);
     CHECK_INPUT(ts);
     CHECK_INPUT(rays_a);
@@ -148,6 +152,8 @@ std::vector<torch::Tensor> composite_train_bw(
     const torch::Tensor dL_drgb,
     const torch::Tensor dL_dnormal_pred,
     const torch::Tensor dL_dsem,
+    const torch::Tensor dL_dclip,
+    const torch::Tensor dL_ddino,
     const torch::Tensor dL_dws,
     const torch::Tensor sigmas,
     const torch::Tensor rgbs,
@@ -168,6 +174,8 @@ std::vector<torch::Tensor> composite_train_bw(
     CHECK_INPUT(dL_drgb);
     CHECK_INPUT(dL_dnormal_pred);
     CHECK_INPUT(dL_dsem);
+    CHECK_INPUT(dL_dclip);
+    CHECK_INPUT(dL_ddino);
     CHECK_INPUT(dL_dws);
     CHECK_INPUT(sigmas);
     CHECK_INPUT(rgbs);
