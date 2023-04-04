@@ -1,3 +1,4 @@
+import torch
 from torch.utils.data import Dataset
 import numpy as np
 
@@ -40,6 +41,21 @@ class BaseDataset(Dataset):
             if hasattr(self, 'labels'):
                 labels = self.labels[img_idxs, pix_idxs]
                 sample['label'] = labels
+
+            if hasattr(self, 'meta_features'):
+                uu = np.round(u/(480/60))
+                vv = np.round((v - 80)/(480/60))
+                mm = (uu >= 0) * (uu < 60) * (vv >= 0) * (vv < 60)
+                pp = ((vv + uu * 60) * mm).astype(np.int)
+                sample["feature_mask"] = mm
+                if getattr(self, 'kwargs')['use_dino']:
+                    sample["dino"] = self.meta_features['dino'][img_idxs, pp]
+                if getattr(self, 'kwargs')['use_clip']:
+                    patch_scales = np.random.randint(0, len(self.meta_features['clip_patch_scales']), size=(pp.shape[0],))
+                    sample['clip_patch_scales'] = self.meta_features["clip_patch_scales"][patch_scales]
+                    sample["clip"] = self.meta_features["clip"][patch_scales, img_idxs, pp]
+
+
             if hasattr(self, 'depths_2d'):
                 depth = self.depths_2d[img_idxs, pix_idxs]
                 sample['depth'] = depth
@@ -58,5 +74,9 @@ class BaseDataset(Dataset):
                     sample['depth'] = depth
                 if rays.shape[1] == 4: # HDR-NeRF data
                     sample['exposure'] = rays[0, 3] # same exposure for all rays
-
+            if hasattr(self, 'meta_features'):
+                if getattr(self, 'kwargs')['use_dino']:
+                    sample["dino"] = self.meta_features['dino'][idx]
+                if getattr(self, 'kwargs')['use_clip']:
+                    sample["clip"] = dict((patch_ratio, clip_feature[idx]) for patch_ratio, clip_feature in self.meta_features['clip'].items())
         return sample

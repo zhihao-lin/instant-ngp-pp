@@ -217,7 +217,7 @@ def __render_rays_train(model, rays_o, rays_d, hits_t, **kwargs):
     for k, v in kwargs.items(): # supply additional inputs, repeated per ray
         if isinstance(v, torch.Tensor):
             kwargs[k] = torch.repeat_interleave(v[rays_a[:, 0]], rays_a[:, 2], 0)
-    sigmas, rgbs, normals_raw, normals_pred, sems, _ = model(xyzs, dirs, **kwargs)
+    sigmas, rgbs, normals_raw, normals_pred, sems, _, clip, dino = model(xyzs, dirs, **kwargs)
     results['sigma'] = sigmas
     results['xyzs'] = xyzs
     results['rays_a'] = rays_a
@@ -225,7 +225,7 @@ def __render_rays_train(model, rays_o, rays_d, hits_t, **kwargs):
 
     results['vr_samples'], results['opacity'], results['depth'], results['rgb'], results['normal_pred'], results['semantic'], results['ws'] = \
         VolumeRenderer.apply(sigmas.contiguous(), rgbs.contiguous(), normals_pred.contiguous(), 
-                                sems.contiguous(), results['deltas'], results['ts'],
+                                sems.contiguous(), clip.contiguous(), dino.contiguous(), results['deltas'], results['ts'],
                                 rays_a, kwargs.get('T_threshold', 1e-4), kwargs.get('classes', 7))
     
     normals_diff = (normals_raw-normals_pred)**2

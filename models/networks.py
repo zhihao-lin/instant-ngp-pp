@@ -73,6 +73,17 @@ class NGP(nn.Module):
                 "interpolation": "Linear"
             })
 
+        self.sem_encoder = \
+            tcnn.Encoding(3, {
+                "otype": "HashGrid",
+                "n_levels": L_,
+                "n_features_per_level": F_ * 4,
+                "log2_hashmap_size": 21,
+                "base_resolution": N_min_,
+                "per_level_scale": b_,
+                "interpolation": "Linear"
+            })
+
         self.dir_encoder = \
             tcnn.Encoding(
                 n_input_dims=3,
@@ -108,6 +119,28 @@ class NGP(nn.Module):
                     }
                 )
         # self.norm_pred_act = nn.Tanh()
+
+        self.dino_header = tcnn.Network(
+                    n_input_dims=self.sem_encoder.n_output_dims, n_output_dims=384, # 384 is dino embedding dim
+                    network_config={
+                        "otype": "CutlassMLP",
+                        "activation": "ReLU",
+                        "output_activation": "None",
+                        "n_neurons": 256,
+                        "n_hidden_layers": 1,
+                    }
+                )
+
+        self.clip_header = tcnn.Network(
+                    n_input_dims=self.sem_encoder.n_output_dims + 1, n_output_dims=512, # 512 is clip embedding dim
+                    network_config={
+                        "otype": "CutlassMLP",
+                        "activation": "ReLU",
+                        "output_activation": "None",
+                        "n_neurons": 256,
+                        "n_hidden_layers": 3,
+                    }
+                )
 
         self.semantic_header = tcnn.Network(
                     n_input_dims=self.rgb_encoder.n_output_dims, n_output_dims=classes,
@@ -178,20 +211,21 @@ class NGP(nn.Module):
         if return_feat: 
             with torch.set_grad_enabled(grad_feat):
                 feat_rgb = self.rgb_encoder(x)
-                return sigmas, feat_rgb
+                feat_sem = self.sem_encoder(x)
+                return sigmas, feat_rgb, feat_sem
         return sigmas
 
     @torch.enable_grad()
     def grad(self, x):
         x = x.requires_grad_(True)
-        sigmas, feat_rgb = self.density(x, return_feat=True)
+        sigmas, feat_rgb, feat_sem = self.density(x, return_feat=True)
         grads = torch.autograd.grad(
                 outputs=sigmas,
                 inputs=x,
                 grad_outputs=torch.ones_like(sigmas, requires_grad=False).cuda(),
                 retain_graph=True
                 )[0]
-        return sigmas, feat_rgb, grads
+        return sigmas, feat_rgb, feat_sem, grads
     
     def forward(self, x, d, **kwargs):
         """
@@ -203,7 +237,7 @@ class NGP(nn.Module):
             sigmas: (N)
             rgbs: (N, 3)
         """
-        sigmas, feat_rgb, grads = self.grad(x)
+        sigmas, feat_rgb, feat_sem, grads = self.grad(x)
         cnt = torch.sum(torch.isinf(grads))
         grads = grads.detach()
         if torch.any(torch.isnan(grads)):
@@ -223,7 +257,11 @@ class NGP(nn.Module):
             print('normals_pred contains nan')
         if torch.any(torch.isinf(normals_pred)):
             print('normals_pred contains inf')
-        
+        clip = self.clip_header(torch.cat([feat_sem, kwargs["clip_patch_scales"][..., None]], dim=1))
+        clip = F.normalize(clip, p=2, dim=-1, eps=1e-6)
+
+        dino = self.dino_header(feat_sem)
+
         semantic = self.semantic_header(feat_rgb)
         semantic = self.semantic_act(semantic)
         # d = d/torch.norm(d, dim=1, keepdim=True)
@@ -242,7 +280,7 @@ class NGP(nn.Module):
             else: # convert to LDR using tonemapper networks
                 rgbs = self.log_radiance_to_rgb(rgbs, **kwargs)
             
-        return sigmas, rgbs, normals_raw, normals_pred, semantic, cnt
+        return sigmas, rgbs, normals_raw, normals_pred, semantic, cnt, clip, dino
     
     def forward_test(self, x, d, **kwargs):
         """
@@ -277,7 +315,6 @@ class NGP(nn.Module):
                 rgbs = self.rgb_net(torch.cat([d, feat_rgb, kwargs['embedding_a']], 1))
             else:
                 rgbs = self.rgb_net(torch.cat([d, feat_rgb], 1))
-            
 
         if self.rgb_act == 'None': # rgbs is log-radiance
             if kwargs.get('output_radiance', False): # output HDR map

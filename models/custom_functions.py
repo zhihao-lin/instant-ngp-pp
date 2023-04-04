@@ -137,9 +137,9 @@ class VolumeRenderer(torch.autograd.Function):
     """
     @staticmethod
     # @custom_fwd(cast_inputs=torch.float32)
-    def forward(ctx, sigmas, rgbs, normals_pred, sems, deltas, ts, rays_a, T_threshold, classes):
+    def forward(ctx, sigmas, rgbs, normals_pred, sems, clips, dinos, deltas, ts, rays_a, T_threshold, classes):
         total_samples, opacity, depth, rgb, normal_pred, sem, ws = \
-            vren.composite_train_fw(sigmas, rgbs, normals_pred, sems, deltas, ts,
+            vren.composite_train_fw(sigmas, rgbs, normals_pred, sems, clips, dinos, deltas, ts,
                                     rays_a, T_threshold, classes)
         ctx.save_for_backward(sigmas, rgbs, normals_pred, deltas, ts, rays_a,
                               opacity, depth, rgb, normal_pred, ws)

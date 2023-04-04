@@ -6,8 +6,6 @@ import glob
 import imageio
 import numpy as np
 import cv2
-import random
-import math
 from pathlib import Path
 from einops import rearrange
 
@@ -43,17 +41,9 @@ from pytorch_lightning.callbacks import TQDMProgressBar, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.distributed import all_gather_ddp_if_available
 
-from utils import slim_ckpt, load_ckpt
-
-# render path
-from tqdm import trange
+from utils import slim_ckpt
 from utils import load_ckpt
 from render import render_for_test
-import trimesh
-from kornia import create_meshgrid
-
-from torch import autograd
-
 import warnings; warnings.filterwarnings("ignore")
 
 
@@ -161,7 +151,8 @@ class NeRFSystem(LightningModule):
                   'render_depth': hparams.render_depth,
                   'render_normal': hparams.render_normal,
                   'render_sem': hparams.render_semantic,
-                  'img_wh': self.img_wh}
+                  'img_wh': self.img_wh,
+                  'clip_patch_scales': batch["clip_patch_scales"]}
         if self.hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
             kwargs['exp_step_factor'] = 1/256
         if self.hparams.use_exposure:
@@ -193,6 +184,8 @@ class NeRFSystem(LightningModule):
         kwargs = {'root_dir': self.hparams.root_dir,
                   'downsample': self.hparams.downsample,
                   'use_sem': self.hparams.render_semantic,
+                  'use_clip': self.hparams.render_clip,
+                  'use_dino': self.hparams.render_dino,
                   'depth_mono': self.hparams.depth_mono}
 
         if self.hparams.dataset_name == 'kitti':

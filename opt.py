@@ -104,12 +104,16 @@ def get_opts():
     # render
     parser.add_argument('--render_rgb', action='store_true', default=False,
                         help='render rgb series')
-    parser.add_argument('--render_depth', action='store_true', default=False,
+    parser.add_argument('--render_depth', action='store_true', default=True,
                         help='render depth series')
     parser.add_argument('--render_normal', action='store_true', default=False,
                         help='render normal series')
     parser.add_argument('--render_semantic', action='store_true', default=False,
                         help='render semantic segmentation series')
+    parser.add_argument('--render_clip', action='store_true', default=True,
+                        help='render clip')
+    parser.add_argument('--render_dino', action='store_true', default=True,
+                        help='render dino')
     parser.add_argument('--normal_composite', action='store_true', default=False,
                         help='render normal+rgb composition series')
     parser.add_argument('--render_points', action='store_true', default=False,

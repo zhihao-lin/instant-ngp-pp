@@ -24,17 +24,11 @@ class HM3DABODataset(BaseDataset):
     def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, **kwargs):
         super().__init__(root_dir, split, downsample)
         self.split = split
+        self.kwargs = kwargs
         prefix = self.get_split_prefix(split)
 
         img_paths = list(sorted((Path(root_dir) / "rgb").glob(prefix+"*.jpg")))
         h, w = self.get_img_wh(downsample, img_paths)
-
-        semantic_paths = []
-        if kwargs.get('use_sem', False):
-            sem_dir_name = None
-            if os.path.exists(os.path.join(root_dir, 'semantic')):
-                sem_dir_name = 'semantic'
-            semantic_paths = list(sorted((Path(root_dir) / sem_dir_name).glob(prefix+"*.pgm")))
 
         depth_paths = []
         if kwargs.get('depth_mono', False):
@@ -43,7 +37,7 @@ class HM3DABODataset(BaseDataset):
         # for old_path in list(sorted((Path(root_dir) / "mask").glob("*.png"))):
         #     os.rename(str(old_path), str(Path(root_dir) / "mask" / ('0_' + old_path.name)))
 
-        target_c2w_f64 = self.get_target_poses(prefix, root_dir)
+        target_c2w_f64, target_indices = self.get_target_poses(prefix, root_dir)
         center, scale = self.get_pose_scale_and_center(root_dir)
         # target_c2w_f64[:, :3, 3] -= center
         target_c2w_f64[..., 3] /= scale
@@ -60,7 +54,7 @@ class HM3DABODataset(BaseDataset):
 ###########################################################
         if self.has_render_traj or render_train:
             print("render camera path" if not render_train else "render train interpolation")
-            test_c2w_f64 = self.get_target_poses("", root_dir)
+            test_c2w_f64 = self.get_target_poses("", root_dir)[0]
             # test_c2w_f64[:, :3, 3] -= center
             test_c2w_f64[..., 3] /= scale
     
@@ -85,23 +79,58 @@ class HM3DABODataset(BaseDataset):
             self.render_traj_rays = self.get_path_rays(test_c2w_f64)
 
 ########################################################### gen rays
-        classes = kwargs.get('classes', 7)
 
         if split.startswith('train'):
-            if len(semantic_paths)>0:
-                self.rays, self.labels, self.poses = self.read_meta('train', img_paths, target_c2w_f64, semantic_paths, classes)
-            else:
-                self.rays, self.poses = self.read_meta('train', img_paths, target_c2w_f64, semantic_paths, classes)
+            # dino features
+            target_dino_features = self.load_dino_features(root_dir, target_indices)
+
+            # clip features
+            target_clip_features = self.load_clip_features(root_dir, target_indices,
+                                                           target_shape=target_dino_features.shape[2:])
+
+            self.rays, self.poses, self.meta_features = self.read_meta('train', img_paths, target_c2w_f64,
+                                                       target_dino_features, target_clip_features)
             if len(depth_paths) > 0:
                 self.depths_2d = self.read_depth(depth_paths) / scale
         else: # val, test
-            if len(semantic_paths)>0:
-                self.rays, self.labels, self.poses = self.read_meta(split, img_paths, target_c2w_f64, semantic_paths, classes)
-            else:
-                self.rays, self.poses = self.read_meta(split, img_paths, target_c2w_f64, semantic_paths, classes)
+            # dino features
+            target_dino_features = self.load_dino_features(root_dir, target_indices)
+
+            # clip features
+            target_clip_features = self.load_clip_features(root_dir, target_indices,
+                                                           target_shape=target_dino_features.shape[2:])
+
+            self.rays, self.poses, self.meta_features = self.read_meta(split, img_paths, target_c2w_f64,
+                                                       target_dino_features, target_clip_features)
             if len(depth_paths)>0:
                 self.depths_2d = self.read_depth(depth_paths) / scale
-            
+
+    def load_dino_features(self, root_dir, target_indices):
+        target_dino_features = []
+        for dino_path in list(sorted((Path(root_dir) / "dino_features").glob("*.npy"))):
+            index = int(dino_path.name[:-4])
+            if index in target_indices:
+                target_dino_features.append(torch.from_numpy(np.load(str(dino_path))))
+        target_dino_features = torch.stack(target_dino_features)
+        return target_dino_features
+
+    def load_clip_features(self, root_dir, target_indices, target_shape):
+        target_clip_features = {}  # patch_size -> features
+        for clip_path in list(sorted((Path(root_dir) / "clip_features").glob("*.npy"))):
+            patch_size = int(clip_path.name[-7:-4]) / 480
+            index = int(clip_path.name.split("_")[0])
+            if patch_size not in target_clip_features:
+                target_clip_features[patch_size] = []
+            if index in target_indices:
+                clip_feature = torch.from_numpy(np.load(str(clip_path))).float()
+                target_clip_features[patch_size].append(clip_feature)
+
+        for key in target_clip_features.keys():
+            target_clip_features[key] = torch.stack(target_clip_features[key]).permute(0, 3, 1, 2)
+            target_clip_features[key] = torch.nn.functional.interpolate(target_clip_features[key], size=target_shape, mode="bilinear")
+
+        return target_clip_features
+
     def get_split_prefix(self, split):
         if split == 'train':
             prefix = '0_'
@@ -134,11 +163,14 @@ class HM3DABODataset(BaseDataset):
 
     def get_target_poses(self, prefix, root_dir):
         target_poses = []
+        target_indices = []
         for pose_fn in sorted((Path(root_dir) / "pose").glob(prefix + "*.txt")):
             cam_mtx = np.loadtxt(pose_fn).reshape(-1, 4)
             target_poses.append(torch.from_numpy(cam_mtx))
+            if prefix == pose_fn.name[:2]:
+                target_indices.append(int(pose_fn.name.split('_')[1][:-4]))
         target_c2w_f64 = torch.stack(target_poses)
-        return target_c2w_f64
+        return target_c2w_f64, target_indices
 
     def get_pose_scale_and_center(self, root_dir):
         all_poses = []
@@ -150,44 +182,35 @@ class HM3DABODataset(BaseDataset):
         print(f"{self.split} scene scale {scale} center {center}")
         return center, scale
 
-    def read_meta(self, split, imgs, c2w_list, semantics, classes=7):
+    def read_meta(self, split, imgs, c2w_list, target_dino_features, target_clip_features):
         # rays = {} # {frame_idx: ray tensor}
         rays = []
-        norms = []
-        labels = []
         poses = []
         print(f'Loading {len(imgs)} {split} images ...')
-        if len(semantics)>0:
-            for idx, (img, sem) in enumerate(tqdm(zip(imgs, semantics))):
-                c2w = np.array(c2w_list[idx][:3])
-                poses += [c2w]
+        for idx, img in enumerate(tqdm(imgs)):
+            c2w = np.array(c2w_list[idx][:3])
+            poses += [c2w]
+            img = read_image(img_path=img, img_wh=self.img_wh)
+            if 'Jade' in self.root_dir or 'Fountain' in self.root_dir:
+                # these scenes have black background, changing to white
+                img[torch.all(img <= 0.1, dim=-1)] = 1.0
+            if img.shape[-1] == 4:
+                img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
+            rays += [img]
+        # kwargs.get('use_sem', False)
+        metadata = {}
+        if self.kwargs.get('use_clip', False):
+            metadata['clip_patch_scales'] = np.array(sorted(list(target_clip_features.keys())))
+            for k in target_clip_features.keys():
+                target_clip_features[k] = target_clip_features[k].permute(0, 2, 3, 1)
+                target_clip_features[k] = target_clip_features[k].reshape(target_clip_features[k].shape[0], -1, target_clip_features[k].shape[-1])
+            metadata['clip'] = torch.stack([target_clip_features[k] for k in metadata['clip_patch_scales']])
+        if self.kwargs.get('use_dino', False):
+            target_dino_features = target_dino_features.permute(0, 2, 3, 1)
+            target_dino_features = target_dino_features.reshape(target_dino_features.shape[0], -1, target_dino_features.shape[-1])
+            metadata['dino'] = target_dino_features
 
-                img = read_image(img_path=str(img), img_wh=self.img_wh)
-                if 'Jade' in self.root_dir or 'Fountain' in self.root_dir:
-                    # these scenes have black background, changing to white
-                    img[torch.all(img<=0.1, dim=-1)] = 1.0
-                if img.shape[-1] == 4:
-                    img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                rays += [img]
-                
-                label = read_semantic(sem_path=sem, sem_wh=self.img_wh, classes=classes)
-                labels += [label]
-
-            return torch.FloatTensor(np.stack(rays)), torch.LongTensor(np.stack(labels)), torch.FloatTensor(np.stack(poses))
-        else:
-            for idx, img in enumerate(tqdm(imgs)):
-                c2w = np.array(c2w_list[idx][:3])
-                poses += [c2w]
-
-                img = read_image(img_path=img, img_wh=self.img_wh)
-                if 'Jade' in self.root_dir or 'Fountain' in self.root_dir:
-                    # these scenes have black background, changing to white
-                    img[torch.all(img<=0.1, dim=-1)] = 1.0
-                if img.shape[-1] == 4:
-                    img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                rays += [img]
-            
-            return torch.FloatTensor(np.stack(rays)), torch.FloatTensor(np.stack(poses))
+        return torch.FloatTensor(np.stack(rays)), torch.FloatTensor(np.stack(poses)), metadata
     
     def read_depth(self, depths):
         depths_ = []
