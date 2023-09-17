@@ -3,6 +3,7 @@ results/
 output/
 ckpts/
 logs/
+lightning_logs/
 
 __pycache__/
 *.py[cod]

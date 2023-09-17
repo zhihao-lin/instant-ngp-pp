@@ -226,7 +226,7 @@ class ColmapDataset(BaseDataset):
         self.poses = torch.FloatTensor(self.poses) # (N_images, 3, 4)
         
         if kwargs.get('use_sem', False):
-            classes = kwargs.get('classes', 7)
+            classes = kwargs.get('num_classes', 7)
             for sem_path in sem_paths:
                 label = read_semantic(sem_path=sem_path, sem_wh=self.img_wh, classes=classes)
                 self.labels += [label]

@@ -177,7 +177,7 @@ class tntDataset(BaseDataset):
             # render_normal_c2w_f64 = pose_avg_inv @ render_normal_c2w_f64
             render_normal_c2w_f64 = render_normal_c2w_f64[:, :3]            
 ########################################################### gen rays
-        classes = kwargs.get('classes', 7)
+        classes = kwargs.get('num_classes', 7)
         self.imgs = imgs
         if split.startswith('train'):
             if len(semantics)>0:

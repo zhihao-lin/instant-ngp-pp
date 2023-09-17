@@ -39,10 +39,10 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from pytorch_lightning.plugins import DDPPlugin
 from pytorch_lightning import LightningModule, Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities.distributed import all_gather_ddp_if_available
 
-from utils import slim_ckpt, load_ckpt
+from utils import slim_ckpt, load_ckpt, save_image
 
 # render path
 from tqdm import trange
@@ -97,7 +97,13 @@ class NeRFSystem(LightningModule):
                 p.requires_grad = False
                         
         rgb_act = 'None' if self.hparams.use_exposure else 'Sigmoid'
-        self.model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len)
+        self.model = NGP(
+            scale=hparams.scale, 
+            rgb_act=rgb_act, 
+            use_skybox=hparams.use_skybox, 
+            embed_a=hparams.embed_a, 
+            embed_a_len=hparams.embed_a_len,
+            classes=hparams.num_classes)
         if hparams.embed_msk:
             self.msk_model = implicit_mask()
             
@@ -109,7 +115,7 @@ class NeRFSystem(LightningModule):
             img_dir_name = 'rgb'
 
         if hparams.dataset_name == 'kitti':
-            self.N_imgs = 2 * hparams.train_frames
+            self.N_imgs = 2 * (hparams.kitti_end - hparams.kitti_start + 1)
         elif hparams.dataset_name == 'mega':
             self.N_imgs = 1920 // 6
         else:
@@ -156,6 +162,7 @@ class NeRFSystem(LightningModule):
                   'render_depth': hparams.render_depth,
                   'render_normal': hparams.render_normal,
                   'render_sem': hparams.render_semantic,
+                  'num_classes': hparams.num_classes,
                   'img_wh': self.img_wh}
         if self.hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
             kwargs['exp_step_factor'] = 1/256
@@ -191,17 +198,12 @@ class NeRFSystem(LightningModule):
                   'depth_mono': self.hparams.depth_mono}
 
         if self.hparams.dataset_name == 'kitti':
-            kwargs['scene'] = self.hparams.kitti_scene
-            kwargs['start'] = self.hparams.start
-            kwargs['train_frames'] = self.hparams.train_frames
-            center_pose = []
-            for i in self.hparams.center_pose:
-                center_pose.append(float(i))
-            val_list = []
-            for i in self.hparams.val_list:
-                val_list.append(int(i))
-            kwargs['center_pose'] = center_pose
-            kwargs['val_list'] = val_list
+            kwargs['seq_id'] = self.hparams.kitti_seq
+            kwargs['frame_start'] = self.hparams.kitti_start
+            kwargs['frame_end'] = self.hparams.kitti_end
+            kwargs['test_id'] = self.hparams.kitti_test_id
+            kwargs['nvs'] = self.hparams.nvs
+
         if self.hparams.dataset_name == 'mega':
             kwargs['mega_frame_start'] = self.hparams.mega_frame_start
             kwargs['mega_frame_end'] = self.hparams.mega_frame_end
@@ -307,57 +309,31 @@ class NeRFSystem(LightningModule):
         self.log('train/loss', loss)
         self.log('train/s_per_ray', results['total_samples']/len(batch['rgb']), True)
         self.log('train/psnr', self.train_psnr, True)
-        if self.global_step%10000 == 0 and self.global_step>0:
+        if self.global_step%10000 == 0: #and self.global_step>0:
             print('[val in training]')
             w, h = self.img_wh
-            
-            # uv = create_meshgrid(h, w, False, device=self.device)[0]
-            # mask = []
-            # chunk_size = 8192*16
-            # for i in range(0, h*w, chunk_size):
-            #     with torch.no_grad():
-            #         uv_ = uv.reshape(-1, 2)[i:i+chunk_size]
-            #         uvi = torch.zeros((uv_.shape[0], 3)).cuda()
-            #         uvi[:, 0] = (uv_[:, 1]-h/2) / h
-            #         uvi[:, 1] = (uv_[:, 0]-w/2) / w
-            #         uvi[:, 2] = (81-self.N_imgs/2) / self.N_imgs
-            #         mask_ = self.msk_model(uvi)
-            #     mask.append(mask_)
-            # mask = torch.cat(mask, dim=0)
-            # mask_pred = mask2img(rearrange(mask.squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h))
-            # mask_pred = rearrange(mask_pred, 'h w c -> c h w', h=h)
-            # tensorboard.add_image('img/mask_pred', mask_pred, self.global_step)
-            
             batch = self.test_dataset[0]
             for i in batch:
                 if isinstance(batch[i], torch.Tensor):
                     batch[i] = batch[i].cuda()
             results = self(batch, split='test')
-            rgb_pred = rearrange(results['rgb'], '(h w) c -> c h w', h=h)
-            if hparams.render_semantic:
-                semantic_pred = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), self.hparams.get('classes', 7))
-                semantic_pred  = rearrange(semantic_pred , 'h w c -> c h w', h=h)
-            depth_pred = depth2img(rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h), scale=2*self.hparams.scale)
-            depth_pred = rearrange(depth_pred, 'h w c -> c h w', h=h)
-            normal_pred = rearrange((results['normal_pred']+1)/2, '(h w) c -> c h w', h=h)
-            rgb_gt = rearrange(batch['rgb'], '(h w) c -> c h w', h=h)
-
-            tensorboard.add_image('img/render', rgb_pred.cpu().numpy(), self.global_step)
-            if hparams.render_semantic:
-                tensorboard.add_image('img/semantic', semantic_pred, self.global_step)
-            tensorboard.add_image('img/depth', depth_pred, self.global_step)
-            tensorboard.add_image('img/normal_pred', normal_pred.cpu().numpy(), self.global_step)
-            tensorboard.add_image('img/gt', rgb_gt.cpu().numpy(), self.global_step)
+            rgb_pred = rearrange(results['rgb'], '(h w) c -> h w c', h=h)
+            rgb_pred = torch.clip(rgb_pred, 0, 1)
+            depth_raw = rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h)
+            depth_pred = depth2img(depth_raw, scale=2*self.hparams.scale)
+            depth_pred = cv2.cvtColor(depth_pred, cv2.COLOR_BGR2RGB)
+            normal_pred = rearrange((results['normal_pred']+1)/2, '(h w) c -> h w c', h=h)
+            normal_raw = rearrange((results['normal_raw']+1)/2, '(h w) c -> h w c', h=h)
+            semantic_pred = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), self.hparams.num_classes)
             
-
-        for name, params in self.model.named_parameters():
-            check_nan=None
-            check_inf=None
-            if params.grad is not None:
-                check_nan = torch.any(torch.isnan(params.grad))
-                check_inf = torch.any(torch.isinf(params.grad))
-            if check_inf or check_nan:
-                import ipdb; ipdb.set_trace()
+            img_dir = os.path.join('results', self.hparams.dataset_name, self.hparams.exp_name, 'val')
+            os.makedirs(img_dir, exist_ok=True)
+            save_image(rgb_pred, os.path.join(img_dir, '{:0>5d}_rgb.png'.format(self.global_step)))
+            save_image((depth_pred/255.0), os.path.join(img_dir, '{:0>5d}_depth.png'.format(self.global_step)))
+            save_image(normal_pred, os.path.join(img_dir, '{:0>5d}_normal.png'.format(self.global_step)))
+            save_image(normal_raw, os.path.join(img_dir, '{:0>5d}_normal_raw.png'.format(self.global_step)))
+            if self.hparams.render_semantic:
+                save_image(semantic_pred, os.path.join(img_dir, '{:0>5d}_semantic.png'.format(self.global_step)))
 
         return loss
         
@@ -388,14 +364,6 @@ class NeRFSystem(LightningModule):
                            torch.clip(rgb_gt*2-1, -1, 1))
             logs['lpips'] = self.val_lpips.compute()
             self.val_lpips.reset()
-
-        if not self.hparams.no_save_test: # save test image to disk
-            idx = batch['img_idxs']
-            rgb_pred = rearrange(results['rgb'].cpu().numpy(), '(h w) c -> h w c', h=h)
-            rgb_pred = (rgb_pred*255).astype(np.uint8)
-            depth = depth2img(rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h))
-            imageio.imsave(os.path.join(self.val_dir, f'{idx:03d}.png'), rgb_pred)
-            imageio.imsave(os.path.join(self.val_dir, f'{idx:03d}_d.png'), depth)
 
         return logs
     
@@ -441,9 +409,10 @@ if __name__ == '__main__':
                               save_on_train_epoch_end=True)
     callbacks = [ckpt_cb, TQDMProgressBar(refresh_rate=1)]
 
-    logger = TensorBoardLogger(save_dir=f"logs/{hparams.dataset_name}",
-                               name=hparams.exp_name,
-                               default_hp_metric=False)
+    logger = WandbLogger(
+        project='instant-ngp-pp',
+        save_dir=f"logs/{hparams.dataset_name}",
+        name=hparams.exp_name)
     
     trainer = Trainer(max_epochs=hparams.num_epochs,
                       check_val_every_n_epoch=hparams.num_epochs,

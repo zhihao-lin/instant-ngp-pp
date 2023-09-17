@@ -36,17 +36,16 @@ def get_opts():
                         help='total number of semantic classes')
 
     # for kitti 360 dataset
-    parser.add_argument('--kitti_scene', type=str, default='seq0_1538-1601',
-                        choices=['seq0_1538-1601', 'seq0_1728-1791', 'seq0_1908-1971', 'seq0_3353-3416'],
-                        help='scene in kitti dataset')
-    parser.add_argument('--start', type=int, default=1538,
-                        help='start index of frames to train.')
-    parser.add_argument('--train_frames', type=int, default=64,
-                        help='total number of frames to train.')
-    parser.add_argument('--center_pose', action="append", default=[],
-                        help='center of poses in kitti-360 dataset')
-    parser.add_argument('--val_list', action="append", default=[],
-                        help='frames for val dataset')
+    parser.add_argument('--kitti_seq', type=int, default=0, 
+                        help='scene sequence index')
+    parser.add_argument('--kitti_start', type=int, default=1538,
+                        help='starting frame index')
+    parser.add_argument('--kitti_end', type=int, default=1601,
+                        help='ending frame index')
+    parser.add_argument('--kitti_test_id', type=int, nargs='+', default=[],
+                        help='frames for testing')
+    parser.add_argument('--nvs', action='store_true', default=False,
+                        help='Evaluate NVS and exclude testing frames in training')
 
     # for mega-nerf dataset
     parser.add_argument('--mega_frame_start', type=int, default=753)

@@ -64,7 +64,7 @@ def volume_render(
     if isinstance(kwargs.get('embedding_a', None), torch.Tensor):
         embedding_a = kwargs['embedding_a']
 
-    classes = kwargs.get('classes', 7)
+    classes = kwargs.get('num_classes', 7)
     samples = 0
     total_samples = 0
     alive_indices = torch.arange(N_rays, device=device)
@@ -103,17 +103,14 @@ def volume_render(
         normals_pred = torch.zeros(len(xyzs), 3, device=device)
         normals_raw = torch.zeros(len(xyzs), 3, device=device)
         sems = torch.zeros(len(xyzs), classes, device=device)
-        if isinstance(kwargs.get('embedding_a', None), torch.Tensor):
-            kwargs['embedding_a'] = torch.repeat_interleave(embedding_a, len(xyzs), 0)[valid_mask]
        
-        _sigmas, _rgbs, _normals_pred, _sems = model.forward_test(xyzs[valid_mask], dirs[valid_mask], **kwargs)
+        _sigmas, _rgbs, _normals_pred, _normals_raw, _sems = model.forward_test(xyzs[valid_mask], dirs[valid_mask], **kwargs)
 
-        if kwargs.get('render_rgb', False) or kwargs.get('render_depth', False):
-            sigmas[valid_mask], rgbs[valid_mask] = _sigmas.detach().float(), _rgbs.detach().float()
-        if kwargs.get('render_sem', False):
-            sems[valid_mask] = _sems.float()
-        if kwargs.get('render_normal', False):
-            normals_pred[valid_mask] = _normals_pred.float()
+        sigmas[valid_mask] = _sigmas.detach().float()
+        rgbs[valid_mask] = _rgbs.detach().float()
+        normals_pred[valid_mask] = _normals_pred.float()
+        normals_raw[valid_mask] = _normals_raw.float()
+        sems[valid_mask] = _sems.float()
             
         sigmas = rearrange(sigmas, '(n1 n2) -> n1 n2', n2=N_samples)
         rgbs = rearrange(rgbs, '(n1 n2) c -> n1 n2 c', n2=N_samples)
@@ -154,7 +151,7 @@ def __render_rays_test(model, rays_o, rays_d, hits_t, **kwargs):
     """
     hits_t = hits_t[:,0,:]
     exp_step_factor = kwargs.get('exp_step_factor', 0.)
-    classes = kwargs.get('classes', 7)
+    classes = kwargs.get('num_classes', 7)
     # output tensors to be filled in
     N_rays = len(rays_o) # h*w
     device = rays_o.device
@@ -226,7 +223,7 @@ def __render_rays_train(model, rays_o, rays_d, hits_t, **kwargs):
     results['vr_samples'], results['opacity'], results['depth'], results['rgb'], results['normal_pred'], results['semantic'], results['ws'] = \
         VolumeRenderer.apply(sigmas.contiguous(), rgbs.contiguous(), normals_pred.contiguous(), 
                                 sems.contiguous(), results['deltas'], results['ts'],
-                                rays_a, kwargs.get('T_threshold', 1e-4), kwargs.get('classes', 7))
+                                rays_a, kwargs.get('T_threshold', 1e-4), kwargs.get('num_classes', 7))
     
     normals_diff = (normals_raw-normals_pred)**2
     dirs = F.normalize(dirs, p=2, dim=-1, eps=1e-6)

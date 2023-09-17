@@ -231,7 +231,11 @@ class NGP(nn.Module):
         d = self.dir_encoder((d+1)/2)
 
         if self.embed_a:
-            rgbs = self.rgb_net(torch.cat([d, feat_rgb, kwargs['embedding_a']], 1))
+            embed_a = kwargs['embedding_a']
+            if embed_a.size(0) < feat_rgb.size(0):
+                repeat = int(feat_rgb.size(0)/embed_a.size(0))
+                embed_a = torch.repeat_interleave(embed_a, repeat, 0)
+            rgbs = self.rgb_net(torch.cat([d, feat_rgb, embed_a], 1))
         else:
             rgbs = self.rgb_net(torch.cat([d, feat_rgb], 1))
             
@@ -254,29 +258,28 @@ class NGP(nn.Module):
             sigmas: (N)
             rgbs: (N, 3)
         """
-        sigmas, feat_rgb = self.density(x, return_feat=True, grad=False, grad_feat=kwargs.get('stylize', False))
+        sigmas, feat_rgb, grads = self.grad(x)
+        normals_raw = -F.normalize(grads, p=2, dim=-1, eps=1e-6)
         
         # up_sem = self.up_label_header(feat_rgb)
         with torch.no_grad():
             normals_pred = self.norm_pred_header(feat_rgb)
             normals_pred = -F.normalize(normals_pred, p=2, dim=-1, eps=1e-6)
-        if torch.any(torch.isnan(normals_pred)):
-            print('normals_pred contains nan')
-        if torch.any(torch.isinf(normals_pred)):
-            print('normals_pred contains inf')
-        
-        with torch.no_grad():
+
             semantic = self.semantic_header(feat_rgb)
             semantic = self.semantic_act(semantic)
         # d = d/torch.norm(d, dim=1, keepdim=True)
         d = F.normalize(d, p=2, dim=-1, eps=1e-6)
         d = self.dir_encoder((d+1)/2)
 
-        with torch.set_grad_enabled(kwargs.get('stylize', False)):
-            if self.embed_a:
-                rgbs = self.rgb_net(torch.cat([d, feat_rgb, kwargs['embedding_a']], 1))
-            else:
-                rgbs = self.rgb_net(torch.cat([d, feat_rgb], 1))
+        if self.embed_a:
+            embed_a = kwargs['embedding_a']
+            if embed_a.size(0) < feat_rgb.size(0):
+                repeat = int(feat_rgb.size(0)/embed_a.size(0))
+                embed_a = torch.repeat_interleave(embed_a, repeat, 0)
+            rgbs = self.rgb_net(torch.cat([d, feat_rgb, embed_a], 1))
+        else:
+            rgbs = self.rgb_net(torch.cat([d, feat_rgb], 1))
             
 
         if self.rgb_act == 'None': # rgbs is log-radiance
@@ -285,7 +288,7 @@ class NGP(nn.Module):
             else: # convert to LDR using tonemapper networks
                 rgbs = self.log_radiance_to_rgb(rgbs, **kwargs)
             
-        return sigmas, rgbs, normals_pred, semantic
+        return sigmas, rgbs, normals_pred, normals_raw, semantic
     
     def forward_skybox(self, d):
         if not self.use_skybox:

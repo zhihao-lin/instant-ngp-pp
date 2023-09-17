@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-
+from PIL import Image
 
 def extract_model_state_dict(ckpt_path, model_name='model', prefixes_to_ignore=[]):
     checkpoint = torch.load(ckpt_path, map_location='cpu')
@@ -79,6 +79,13 @@ def guided_filter(image_p, image_i, r, eps=0.1):
 
     image_out = mean_a * image_i + mean_b
     return image_out
+
+def save_image(image, path):
+    if isinstance(image, torch.Tensor):
+        image = image.cpu().numpy()
+    image = (image * 255).astype(np.uint8)
+    image = Image.fromarray(image)
+    image.save(path)
 
 def test():
     from matplotlib import pyplot as plt

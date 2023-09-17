@@ -10,7 +10,7 @@ from models.networks import NGP
 from models.rendering import render
 from datasets import dataset_dict
 from datasets.ray_utils import get_rays
-from utils import load_ckpt
+from utils import load_ckpt, save_image
 from opt import get_opts
 from einops import rearrange
 
@@ -52,7 +52,13 @@ def render_for_test(hparams, split='test'):
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
     if hparams.use_skybox:
         print('render skybox!')
-    model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len).cuda()
+    model = NGP(
+        scale=hparams.scale, 
+        rgb_act=rgb_act, 
+        use_skybox=hparams.use_skybox, 
+        embed_a=hparams.embed_a, 
+        embed_a_len=hparams.embed_a_len,
+        classes=hparams.num_classes).cuda()
     if hparams.ckpt_load:
         ckpt_path = hparams.ckpt_load
     else: 
@@ -67,7 +73,7 @@ def render_for_test(hparams, split='test'):
         img_dir_name = 'rgb'
     
     if hparams.dataset_name == 'kitti':
-        N_imgs = 2 * hparams.train_frames
+        N_imgs = 2 * (hparams.kitti_end - hparams.kitti_start + 1)
     elif hparams.dataset_name == 'mega':
         N_imgs = 1920 // 6
     else:
@@ -86,18 +92,13 @@ def render_for_test(hparams, split='test'):
             'render_train': hparams.render_train,
             'render_traj': hparams.render_traj,
             'anti_aliasing_factor': hparams.anti_aliasing_factor}
+
     if hparams.dataset_name == 'kitti':
-            kwargs['scene'] = hparams.kitti_scene
-            kwargs['start'] = hparams.start
-            kwargs['train_frames'] = hparams.train_frames
-            center_pose = []
-            for i in hparams.center_pose:
-                center_pose.append(float(i))
-            val_list = []
-            for i in hparams.val_list:
-                val_list.append(int(i))
-            kwargs['center_pose'] = center_pose
-            kwargs['val_list'] = val_list
+            kwargs['seq_id'] = hparams.kitti_seq
+            kwargs['frame_start'] = hparams.kitti_start
+            kwargs['frame_end'] = hparams.kitti_end
+            kwargs['test_id'] = hparams.kitti_test_id
+
     if hparams.dataset_name == 'mega':
             kwargs['mega_frame_start'] = hparams.mega_frame_start
             kwargs['mega_frame_end'] = hparams.mega_frame_end
@@ -122,6 +123,7 @@ def render_for_test(hparams, split='test'):
     depth_series = []
     points_series = []
     normal_series = []
+    normal_raw_series = []
     semantic_series = []
 
     for img_idx in trange(len(render_traj_rays)):
@@ -135,10 +137,11 @@ def render_for_test(hparams, split='test'):
             'render_depth': hparams.render_depth,
             'render_normal': hparams.render_normal,
             'render_sem': hparams.render_semantic,
+            'num_classes': hparams.num_classes,
             'img_wh': dataset.img_wh,
             'anti_aliasing_factor': hparams.anti_aliasing_factor
         }
-        if hparams.dataset_name in ['colmap', 'nerfpp']:
+        if hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
             render_kwargs['exp_step_factor'] = 1/256
         if hparams.embed_a:
             render_kwargs['embedding_a'] = embedding_a
@@ -165,7 +168,7 @@ def render_for_test(hparams, split='test'):
             frame_series.append(rgb_frame)
             cv2.imwrite(os.path.join(frames_dir, '{:0>3d}-rgb.png'.format(img_idx)), cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR))
         if hparams.render_semantic:
-            sem_frame = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), 7)
+            sem_frame = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), hparams.num_classes)
             semantic_series.append(sem_frame)
         if hparams.render_depth:
             depth_raw = rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h)
@@ -179,22 +182,29 @@ def render_for_test(hparams, split='test'):
             points_series.append(points)
 
         if hparams.render_normal:
-            normal = rearrange(results['normal_pred'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6            
-            normal_series.append((255*(normal+1)/2).astype(np.uint8))
+            normal_pred = rearrange(results['normal_pred'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
+            # normal_pred = convert_normal(normal_pred, pose)
+            normal_vis = (normal_pred + 1)/2
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal.png'.format(img_idx)))
+            normal_series.append((255*normal_vis).astype(np.uint8))
+            normal_raw = rearrange(results['normal_raw'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
+            normal_vis = (normal_raw + 1)/2
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal-raw.png'.format(img_idx)))
+            normal_raw_series.append((255*normal_vis).astype(np.uint8))
                         
         torch.cuda.synchronize()
 
     if hparams.render_rgb:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_traj.mp4' if not hparams.render_train else "circle_path.mp4"),
+        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_rgb.mp4'),
                         frame_series,
                         fps=30, macro_block_size=1)
 
     if hparams.render_semantic:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_semantic.mp4' if not hparams.render_train else "circle_path_semantic.mp4"),
+        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_semantic.mp4'),
                         semantic_series,
                         fps=30, macro_block_size=1)
     if hparams.render_depth:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_traj_depth.mp4' if not hparams.render_train else "circle_path_depth.mp4"),
+        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_depth.mp4'),
                         depth_series,
                         fps=30, macro_block_size=1)
         
@@ -208,8 +218,11 @@ def render_for_test(hparams, split='test'):
         np.save(path, points_all)
 
     if hparams.render_normal:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_traj_normal.mp4' if not hparams.render_train else "circle_path_normal.mp4"),
+        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_normal.mp4'),
                         normal_series,
+                        fps=30, macro_block_size=1)
+        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_normal_raw.mp4'),
+                        normal_raw_series,
                         fps=30, macro_block_size=1)
 
 if __name__ == '__main__':
