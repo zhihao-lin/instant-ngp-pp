@@ -43,6 +43,9 @@ class BaseDataset(Dataset):
             if hasattr(self, 'depths_2d'):
                 depth = self.depths_2d[img_idxs, pix_idxs]
                 sample['depth'] = depth
+            if hasattr(self, 'normals'):
+                normal = self.normals[img_idxs, pix_idxs]
+                sample['normal'] = normal
             if self.rays.shape[-1] == 4: # HDR-NeRF data
                 sample['exposure'] = rays[:, 3:]
         else:

@@ -294,5 +294,32 @@ def test():
     print('Up  direction:', dataset.up_dir)
     print('Scene scale:', dataset.scale)
 
+    import open3d 
+    import vedo
+    vizualizer = open3d.visualization.Visualizer()
+    vizualizer.create_window()
+    vizualizer.create_window(width=1280, height=720)
+    w, h = dataset.img_wh
+    K = dataset.K
+    poses = dataset.poses.numpy()
+    # for i in range(len(poses)):
+    #     pose = np.concatenate([poses[i], np.array([[0, 0, 0, 1]])], axis=0)
+    #     pose = np.linalg.inv(pose)
+    #     cam = open3d.geometry.LineSet.create_camera_visualization(view_width_px=w, view_height_px=h, intrinsic=K, extrinsic=pose)
+    #     vizualizer.add_geometry(cam)
+    # vizualizer.run()
+
+    pos = poses[:, :, -1]
+    arrow_len, s = 1, 1
+    x_end   = pos + arrow_len * poses[:, :, 0]
+    y_end   = pos + arrow_len * poses[:, :, 1]
+    z_end   = pos + arrow_len * poses[:, :, 2]
+    
+    x = vedo.Arrows(pos, x_end, s=s, c='red')
+    y = vedo.Arrows(pos, y_end, s=s, c='green')
+    z = vedo.Arrows(pos, z_end, s=s, c='blue')
+        
+    vedo.show(x,y,z, axes=1)
+
 if __name__ == '__main__':
     test()

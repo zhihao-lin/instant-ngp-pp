@@ -65,26 +65,7 @@ def render_for_test(hparams, split='test'):
         ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
 
     load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
-    print('Loaded checkpoint: {}'.format(ckpt_path))
-    
-    if os.path.exists(os.path.join(hparams.root_dir, 'images')):
-        img_dir_name = 'images'
-    elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
-        img_dir_name = 'rgb'
-    
-    if hparams.dataset_name == 'kitti':
-        N_imgs = 2 * (hparams.kitti_end - hparams.kitti_start + 1)
-    elif hparams.dataset_name == 'mega':
-        N_imgs = 1920 // 6
-    else:
-        N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
-    
-    embed_a_length = hparams.embed_a_len
-    if hparams.embed_a:
-        embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda() 
-        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
-            prefixes_to_ignore=["model", "msk_model"])
-        embedding_a = embedding_a(torch.tensor([0]).cuda())        
+    print('Loaded checkpoint: {}'.format(ckpt_path))    
         
     dataset = dataset_dict[hparams.dataset_name]
     kwargs = {'root_dir': hparams.root_dir,
@@ -103,16 +84,24 @@ def render_for_test(hparams, split='test'):
             kwargs['mega_frame_start'] = hparams.mega_frame_start
             kwargs['mega_frame_end'] = hparams.mega_frame_end
 
-    dataset = dataset(split='test', **kwargs)
-    w, h = dataset.img_wh
+    dataset_test = dataset(split='test', **kwargs)
+    w, h = dataset_test.img_wh
+    
+    if hparams.embed_a:
+        dataset_train = dataset(split='train', **kwargs)
+        embed_a_length = hparams.embed_a_len
+        embedding_a = torch.nn.Embedding(len(dataset_train.poses), embed_a_length).cuda() 
+        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
+            prefixes_to_ignore=["model", "msk_model"])
+        embedding_a = embedding_a(torch.tensor([0]).cuda())    
     if hparams.render_traj:
-        render_traj_rays = dataset.render_traj_rays
+        render_traj_rays = dataset_test.render_traj_rays
     else:
         # render_traj_rays = dataset.rays
         render_traj_rays = {}
         print("generating rays' origins and directions!")
-        for img_idx in trange(len(dataset.poses)):
-            rays_o, rays_d = get_rays(dataset.directions.cuda(), dataset[img_idx]['pose'].cuda())
+        for img_idx in trange(len(dataset_test.poses)):
+            rays_o, rays_d = get_rays(dataset_test.directions.cuda(), dataset_test[img_idx]['pose'].cuda())
             render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
 
     frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames'
@@ -138,7 +127,7 @@ def render_for_test(hparams, split='test'):
             'render_normal': hparams.render_normal,
             'render_sem': hparams.render_semantic,
             'num_classes': hparams.num_classes,
-            'img_wh': dataset.img_wh,
+            'img_wh': dataset_test.img_wh,
             'anti_aliasing_factor': hparams.anti_aliasing_factor
         }
         if hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:

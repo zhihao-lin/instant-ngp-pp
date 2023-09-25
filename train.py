@@ -108,21 +108,21 @@ class NeRFSystem(LightningModule):
             self.msk_model = implicit_mask()
             
         ### setup appearance embeddings
-        img_dir_name = None
-        if os.path.exists(os.path.join(hparams.root_dir, 'images')):
-            img_dir_name = 'images'
-        elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
-            img_dir_name = 'rgb'
+        # img_dir_name = None
+        # if os.path.exists(os.path.join(hparams.root_dir, 'images')):
+        #     img_dir_name = 'images'
+        # elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
+        #     img_dir_name = 'rgb'
 
-        if hparams.dataset_name == 'kitti':
-            self.N_imgs = 2 * (hparams.kitti_end - hparams.kitti_start + 1)
-        elif hparams.dataset_name == 'mega':
-            self.N_imgs = 1920 // 6
-        else:
-            self.N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
+        # if hparams.dataset_name == 'kitti':
+        #     self.N_imgs = 2 * (hparams.kitti_end - hparams.kitti_start + 1)
+        # elif hparams.dataset_name == 'mega':
+        #     self.N_imgs = 1920 // 6
+        # else:
+        #     self.N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
         
-        if hparams.embed_a:
-            self.embedding_a = torch.nn.Embedding(self.N_imgs, hparams.embed_a_len) 
+        # if hparams.embed_a:
+        #     self.embedding_a = torch.nn.Embedding(self.N_imgs, hparams.embed_a_len) 
         ###
         
         G = self.model.grid_size
@@ -211,6 +211,7 @@ class NeRFSystem(LightningModule):
         self.train_dataset = dataset(split=self.hparams.split, **kwargs)
         self.train_dataset.batch_size = self.hparams.batch_size
         self.train_dataset.ray_sampling_strategy = self.hparams.ray_sampling_strategy
+        self.embedding_a = torch.nn.Embedding(len(self.train_dataset.poses), self.hparams.embed_a_len)
 
         self.test_dataset = dataset(split='test', **kwargs)
         
@@ -288,9 +289,10 @@ class NeRFSystem(LightningModule):
         
         loss_kwargs = {'dataset_name': self.hparams.dataset_name,
                     'uniform_density': uniform_density,
-                    'normal_p': True,
+                    'normal_ref': self.hparams.normal_ref,
                     'semantic': self.hparams.render_semantic,
                     'depth_mono': self.hparams.depth_mono,
+                    'normal_mono': self.hparams.normal_mono,
                     'embed_msk': self.hparams.embed_msk,
                     'step': self.global_step}
         if self.hparams.embed_msk:
@@ -309,6 +311,8 @@ class NeRFSystem(LightningModule):
         self.log('train/loss', loss)
         self.log('train/s_per_ray', results['total_samples']/len(batch['rgb']), True)
         self.log('train/psnr', self.train_psnr, True)
+        # self.log('train/normal_ref_rp', loss_d['normal_ref_rp'].mean())
+        # self.log('train/normal_ref_ro', loss_d['normal_ref_ro'].mean())
         if self.global_step%10000 == 0: #and self.global_step>0:
             print('[val in training]')
             w, h = self.img_wh

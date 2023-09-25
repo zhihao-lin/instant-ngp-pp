@@ -64,25 +64,28 @@ def generate_video():
 
 def merge_video():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-left')
-    parser.add_argument('-right')
+    parser.add_argument('-first')
+    parser.add_argument('-second')
     parser.add_argument('-out')
+    parser.add_argument('-axis', type=int, default=0)
+    parser.add_argument('-fps', type=int, default=30)
     args = parser.parse_args()
 
-    frames_left  = read_video_frames(args.left)
-    frames_right = read_video_frames(args.right)
+    frames_first  = read_video_frames(args.first)
+    frames_second = read_video_frames(args.second)
     frames_out   = []
 
-    frame_len = min(len(frames_left), len(frames_right))
+    frame_len = min(len(frames_first), len(frames_second))
     for i in range(frame_len):
-        left  = frames_left[i]
-        right = frames_right[i]
-        out = np.concatenate([left, right], axis=1)
+        left  = frames_first[i]
+        right = frames_second[i]
+        out = np.concatenate([left, right], axis=args.axis)
         frames_out.append(out)
 
     imageio.mimsave(args.out,
                     frames_out,
-                    fps=30, macro_block_size=1)
+                    fps=args.fps, macro_block_size=1)
+    print('Export video:', args.out)
 
 if __name__ == '__main__':
     # extract_frames()

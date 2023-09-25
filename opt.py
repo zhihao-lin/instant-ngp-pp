@@ -9,7 +9,7 @@ def get_opts():
     parser.add_argument('--root_dir', type=str, required=True,
                         help='root directory of dataset')
     parser.add_argument('--dataset_name', type=str, default='nerf',
-                        choices=['nerf', 'nsvf', 'colmap', 'nerfpp', 'rtmv', 'tnt', 'kitti', 'mega'],
+                        choices=['nerf', 'nsvf', 'colmap', 'nerfpp', 'rtmv', 'tnt', 'kitti', 'mega', 'highbay'],
                         help='which dataset to train/test')
     parser.add_argument('--split', type=str, default='train',
                         choices=['train', 'trainval'],
@@ -70,6 +70,10 @@ def get_opts():
                         help='learning rate')
     parser.add_argument('--depth_mono', action='store_true', default=False,
                         help='use 2D predicted depth')
+    parser.add_argument('--normal_mono', action='store_true', default=False,
+                        help='use 2D normal prediction as supervision')
+    parser.add_argument('--normal_ref', action='store_true', default=False,
+                        help='use density gradient as normal supervision (Ref-NeRF)')
     # experimental training options
     parser.add_argument('--optimize_ext', action='store_true', default=False,
                         help='whether to optimize extrinsics (experimental)')

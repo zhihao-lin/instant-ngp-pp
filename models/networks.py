@@ -189,7 +189,7 @@ class NGP(nn.Module):
                 outputs=sigmas,
                 inputs=x,
                 grad_outputs=torch.ones_like(sigmas, requires_grad=False).cuda(),
-                retain_graph=True
+                create_graph=True
                 )[0]
         return sigmas, feat_rgb, grads
     
@@ -204,26 +204,15 @@ class NGP(nn.Module):
             rgbs: (N, 3)
         """
         sigmas, feat_rgb, grads = self.grad(x)
-        cnt = torch.sum(torch.isinf(grads))
-        grads = grads.detach()
-        if torch.any(torch.isnan(grads)):
-            print('grads contains nan')
-        if torch.any(torch.isinf(grads)):
-            print('grads contains inf')
+        # check_tensor(grads, 'grads')
         normals_raw = -F.normalize(grads, p=2, dim=-1, eps=1e-6)
-        if torch.any(torch.isnan(normals_raw)):
-            print('normals_raw contains nan')
-        if torch.any(torch.isinf(normals_raw)):
-            print('normals_raw contains inf')
+        # check_tensor(normals_raw, 'normals_raw')
         
         # up_sem = self.up_label_header(feat_rgb)
         normals_pred = self.norm_pred_header(feat_rgb)
         normals_pred = -F.normalize(normals_pred, p=2, dim=-1, eps=1e-6)
-        if torch.any(torch.isnan(normals_pred)):
-            print('normals_pred contains nan')
-        if torch.any(torch.isinf(normals_pred)):
-            print('normals_pred contains inf')
-        
+        # check_tensor(normals_pred, 'normals_pred')
+
         semantic = self.semantic_header(feat_rgb)
         semantic = self.semantic_act(semantic)
         # d = d/torch.norm(d, dim=1, keepdim=True)
@@ -246,7 +235,7 @@ class NGP(nn.Module):
             else: # convert to LDR using tonemapper networks
                 rgbs = self.log_radiance_to_rgb(rgbs, **kwargs)
             
-        return sigmas, rgbs, normals_raw, normals_pred, semantic, cnt
+        return sigmas, rgbs, normals_raw, normals_pred, semantic
     
     def forward_test(self, x, d, **kwargs):
         """
@@ -427,3 +416,9 @@ class NGP(nn.Module):
         dense_xyz += half_grid_size*torch.rand_like(dense_xyz).cuda()
         density = self.density(dense_xyz.view(-1,3))
         return density
+
+def check_tensor(tensor, name):
+    if torch.any(torch.isnan(tensor)):
+        print('{} contains nan'.format(name))
+    if torch.any(torch.isinf(tensor)):
+        print('{} contains inf'.format(name))

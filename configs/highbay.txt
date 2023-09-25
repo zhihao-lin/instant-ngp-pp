@@ -1,14 +1,9 @@
-root_dir = /hdd/datasets/KITTI-360
-dataset_name = kitti
-exp_name = 0924_kitti360_1538_normal_create_graph
+root_dir = /hdd/datasets/highbay/0904/8_28_23_2023-09-04-09-13-16
+dataset_name = highbay
+exp_name = 0925_highbay_0
 batch_size = 1024
 scale = 8.0
 num_epochs = 100
-
-kitti_seq = 0
-kitti_start = 1538
-kitti_end = 1601
-kitti_test_id = [1545,1555,1565,1575,1585,1595]
 
 ### render a camera path(through interpolation between poses)
 render_traj = True
@@ -21,11 +16,9 @@ render_depth = True
 
 ### render derived normal or not
 render_normal = True
-normal_mono = True
-normal_ref = True
 
 ### render semantic labels or not, set to False if no g.t. semantic labels
-render_semantic = True
+render_semantic = False
 num_classes = 10
 
 ### appearance embeddings

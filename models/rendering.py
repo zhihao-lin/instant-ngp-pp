@@ -170,6 +170,8 @@ def __render_rays_test(model, rays_o, rays_d, hits_t, **kwargs):
             opacity, depth, rgb, normal_pred, normal_raw, sem,
             **kwargs
         )
+    normal_raw  = F.normalize(normal_raw, dim=-1)
+    normal_pred = F.normalize(normal_pred, dim=-1)
     
     results = {}
     results['opacity'] = opacity # (h*w)
@@ -208,30 +210,21 @@ def __render_rays_train(model, rays_o, rays_d, hits_t, **kwargs):
                 rays_o, rays_d, hits_t[:, 0], model.density_bitfield,
                 model.cascades, model.scale,
                 exp_step_factor, model.grid_size, MAX_SAMPLES)
+    results['rays_a'] = rays_a
     results['total_samples'] = total_samples
     
     
     for k, v in kwargs.items(): # supply additional inputs, repeated per ray
         if isinstance(v, torch.Tensor):
             kwargs[k] = torch.repeat_interleave(v[rays_a[:, 0]], rays_a[:, 2], 0)
-    sigmas, rgbs, normals_raw, normals_pred, sems, _ = model(xyzs, dirs, **kwargs)
+    sigmas, rgbs, normals_raw, normals_pred, sems = model(xyzs, dirs, **kwargs)
     results['sigma'] = sigmas
     results['xyzs'] = xyzs
-    results['rays_a'] = rays_a
-    normals_raw = normals_raw.detach()
 
     results['vr_samples'], results['opacity'], results['depth'], results['rgb'], results['normal_pred'], results['semantic'], results['ws'] = \
         VolumeRenderer.apply(sigmas.contiguous(), rgbs.contiguous(), normals_pred.contiguous(), 
                                 sems.contiguous(), results['deltas'], results['ts'],
                                 rays_a, kwargs.get('T_threshold', 1e-4), kwargs.get('num_classes', 7))
-    
-    normals_diff = (normals_raw-normals_pred)**2
-    dirs = F.normalize(dirs, p=2, dim=-1, eps=1e-6)
-    normals_ori = torch.clamp(torch.sum(normals_pred*dirs, dim=-1), min=0.)**2 # don't keep dim!
-    
-    results['Ro'], results['Rp'] = \
-        RefLoss.apply(sigmas.detach().contiguous(), normals_diff.contiguous(), normals_ori.contiguous(), results['deltas'], results['ts'],
-                            rays_a, kwargs.get('T_threshold', 1e-4))
         
     if kwargs.get('use_skybox', False):
         rgb_bg = model.forward_skybox(rays_d)
@@ -246,10 +239,13 @@ def __render_rays_train(model, rays_o, rays_d, hits_t, **kwargs):
     results['rgb'] = results['rgb'] + \
                 rgb_bg*rearrange(1-results['opacity'], 'n -> n 1')
 
-    for (i, n) in results.items():
-        if torch.any(torch.isnan(n)):
-            print(f'nan in results[{i}]')
-        if torch.any(torch.isinf(n)):
-            print(f'inf in results[{i}]')
+    # Normal loss
+    normals_diff = (normals_raw - normals_pred.detach())**2
+    dirs = F.normalize(dirs, p=2, dim=-1, eps=1e-6)
+    normals_ori = torch.clamp(torch.sum(normals_raw*dirs, dim=-1), min=0.)**2 # don't keep dim!
+    
+    results['Ro'], results['Rp'] = \
+        RefLoss.apply(sigmas.detach().contiguous(), normals_diff.contiguous(), normals_ori.contiguous(), results['deltas'], results['ts'],
+                            rays_a, kwargs.get('T_threshold', 1e-4))
 
     return results
