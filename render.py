@@ -10,7 +10,7 @@ from models.networks import NGP
 from models.rendering import render
 from datasets import dataset_dict
 from datasets.ray_utils import get_rays
-from utils import load_ckpt, save_image
+from utils import load_ckpt, save_image, convert_normal
 from opt import get_opts
 from einops import rearrange
 
@@ -64,7 +64,7 @@ def render_for_test(hparams, split='test'):
     else: 
         ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
 
-    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
+    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model', 'density_grid', 'grid_coords'])
     print('Loaded checkpoint: {}'.format(ckpt_path))    
         
     dataset = dataset_dict[hparams.dataset_name]
@@ -94,13 +94,17 @@ def render_for_test(hparams, split='test'):
         load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
             prefixes_to_ignore=["model", "msk_model"])
         embedding_a = embedding_a(torch.tensor([0]).cuda())    
+    
+    poses, render_traj_rays = None, None
     if hparams.render_traj:
         render_traj_rays = dataset_test.render_traj_rays
+        poses = dataset_test.render_c2w
     else:
         # render_traj_rays = dataset.rays
         render_traj_rays = {}
         print("generating rays' origins and directions!")
-        for img_idx in trange(len(dataset_test.poses)):
+        poses = dataset_test.poses
+        for img_idx in trange(len(poses)):
             rays_o, rays_d = get_rays(dataset_test.directions.cuda(), dataset_test[img_idx]['pose'].cuda())
             render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
 
@@ -117,6 +121,7 @@ def render_for_test(hparams, split='test'):
 
     for img_idx in trange(len(render_traj_rays)):
         rays = render_traj_rays[img_idx][:, :6].cuda()
+        pose = poses[img_idx]
         render_kwargs = {
             'img_idx': img_idx,
             'test_time': True,
@@ -171,13 +176,13 @@ def render_for_test(hparams, split='test'):
             points_series.append(points)
 
         if hparams.render_normal:
+            pose = pose.cpu().numpy()
             normal_pred = rearrange(results['normal_pred'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
-            # normal_pred = convert_normal(normal_pred, pose)
-            normal_vis = (normal_pred + 1)/2
+            normal_vis = (convert_normal(normal_pred, pose) + 1)/2
             save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal.png'.format(img_idx)))
             normal_series.append((255*normal_vis).astype(np.uint8))
             normal_raw = rearrange(results['normal_raw'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
-            normal_vis = (normal_raw + 1)/2
+            normal_vis = (convert_normal(normal_raw, pose) + 1)/2
             save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal-raw.png'.format(img_idx)))
             normal_raw_series.append((255*normal_vis).astype(np.uint8))
                         
@@ -197,9 +202,9 @@ def render_for_test(hparams, split='test'):
                         depth_series,
                         fps=30, macro_block_size=1)
         
-        depth_raw_all = np.stack(depth_raw_series) #(n_frames, h ,w)
-        path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw.npy'
-        np.save(path, depth_raw_all)
+        # depth_raw_all = np.stack(depth_raw_series) #(n_frames, h ,w)
+        # path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw.npy'
+        # np.save(path, depth_raw_all)
 
     if hparams.render_points:
         points_all = np.stack(points_series)

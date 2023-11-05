@@ -33,6 +33,7 @@ class NGP(nn.Module):
 
         # constants
         L = 16; F = 2; log2_T = 17; N_min = 16
+        # L = 16; F = 8; log2_T = 19; N_min = 16
         b = np.exp(np.log(2048*scale/N_min)/(L-1))
         print(f'GridEncoding for spital: Nmin={N_min} b={b:.5f} F={F} T=2^{log2_T} L={L}')
 
@@ -59,6 +60,7 @@ class NGP(nn.Module):
 
         # constants
         L_ = 16; F_ = 2; log2_T_ = 19; N_min_ = 16
+        # L_ = 16; F_ = 8; log2_T_ = 21; N_min_ = 16
         b_ = np.exp(np.log(2048*scale/N_min_)/(L_-1))
         print(f'GridEncoding for RGB: Nmin={N_min_} b={b_:.5f} F={F_} T=2^{log2_T_} L={L_}')
 

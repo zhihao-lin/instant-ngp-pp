@@ -87,6 +87,11 @@ def save_image(image, path):
     image = Image.fromarray(image)
     image.save(path)
 
+def convert_normal(normal, pose_c2w):
+    R_w2c = pose_c2w[:3, :3].T
+    normal_cam = normal @ R_w2c.T
+    return normal_cam
+
 def test():
     from matplotlib import pyplot as plt
     def show(img):

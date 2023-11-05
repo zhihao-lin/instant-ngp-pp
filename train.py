@@ -42,7 +42,7 @@ from pytorch_lightning.callbacks import TQDMProgressBar, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities.distributed import all_gather_ddp_if_available
 
-from utils import slim_ckpt, load_ckpt, save_image
+from utils import slim_ckpt, load_ckpt, save_image, convert_normal
 
 # render path
 from tqdm import trange
@@ -321,13 +321,16 @@ class NeRFSystem(LightningModule):
                 if isinstance(batch[i], torch.Tensor):
                     batch[i] = batch[i].cuda()
             results = self(batch, split='test')
+            pose = batch['pose']
             rgb_pred = rearrange(results['rgb'], '(h w) c -> h w c', h=h)
             rgb_pred = torch.clip(rgb_pred, 0, 1)
             depth_raw = rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h)
             depth_pred = depth2img(depth_raw, scale=2*self.hparams.scale)
             depth_pred = cv2.cvtColor(depth_pred, cv2.COLOR_BGR2RGB)
-            normal_pred = rearrange((results['normal_pred']+1)/2, '(h w) c -> h w c', h=h)
-            normal_raw = rearrange((results['normal_raw']+1)/2, '(h w) c -> h w c', h=h)
+            normal_pred = rearrange(results['normal_pred'], '(h w) c -> h w c', h=h)
+            normal_pred = (convert_normal(normal_pred, pose)+1)/2
+            normal_raw = rearrange(results['normal_raw'], '(h w) c -> h w c', h=h)
+            normal_raw = (convert_normal(normal_raw, pose)+1)/2
             semantic_pred = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), self.hparams.num_classes)
             
             img_dir = os.path.join('results', self.hparams.dataset_name, self.hparams.exp_name, 'val')

@@ -240,7 +240,7 @@ def __render_rays_train(model, rays_o, rays_d, hits_t, **kwargs):
                 rgb_bg*rearrange(1-results['opacity'], 'n -> n 1')
 
     # Normal loss
-    normals_diff = (normals_raw - normals_pred.detach())**2
+    normals_diff = (normals_raw - normals_pred)**2
     dirs = F.normalize(dirs, p=2, dim=-1, eps=1e-6)
     normals_ori = torch.clamp(torch.sum(normals_raw*dirs, dim=-1), min=0.)**2 # don't keep dim!
     

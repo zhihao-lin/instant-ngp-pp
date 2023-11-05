@@ -25,8 +25,8 @@ class HighbayDataset(BaseDataset):
 
         dir_rgb_0 = os.path.join(root_dir, 'left', 'rgb')
         dir_rgb_1 = os.path.join(root_dir, 'right', 'rgb')
-        dir_sem_0 = os.path.join(root_dir, 'left', 'sem')
-        dir_sem_1 = os.path.join(root_dir, 'right', 'sem')
+        dir_sem_0 = os.path.join(root_dir, 'left', 'semantic')
+        dir_sem_1 = os.path.join(root_dir, 'right', 'semantic')
         dir_normal_0 = os.path.join(root_dir, 'left', 'normal')
         dir_normal_1 = os.path.join(root_dir, 'right', 'normal')
         path_csv = os.path.join(root_dir, 'gps.csv')
@@ -57,17 +57,17 @@ class HighbayDataset(BaseDataset):
         
         print('Load RGB ...')
         rgb_0 = self.read_rgb(dir_rgb_0, valid_ids)
-        # rgb_1 = self.read_rgb(dir_rgb_1, valid_ids)
-        self.rays = torch.FloatTensor(np.concatenate([rgb_0], axis=0))
+        rgb_1 = self.read_rgb(dir_rgb_1, valid_ids)
+        self.rays = torch.FloatTensor(np.concatenate([rgb_0, rgb_1], axis=0))
         if self.split == 'train':
-        #     print('Load Semantic ...')
-        #     sem_0 = self.read_semantics(dir_sem_0, frame_id)
-        #     sem_1 = self.read_semantics(dir_sem_1, frame_id)
-        #     self.labels = torch.LongTensor(np.concatenate([sem_0, sem_1], axis=0))
+            print('Load Semantic ...')
+            sem_0 = self.read_semantics(dir_sem_0, valid_ids)
+            sem_1 = self.read_semantics(dir_sem_1, valid_ids)
+            self.labels = torch.LongTensor(np.concatenate([sem_0, sem_1], axis=0))
             print('Load Normal ...')
             normal_0 = self.read_normal(dir_normal_0, valid_ids)
-            # normal_1 = self.read_normal(dir_normal_1, valid_ids)
-            self.normals = torch.FloatTensor(np.concatenate([normal_0], axis=0))
+            normal_1 = self.read_normal(dir_normal_1, valid_ids)
+            self.normals = torch.FloatTensor(np.concatenate([normal_0, normal_1], axis=0))
 
     def get_valid_time(self, img_time, valid_path):
         valids = []
@@ -123,13 +123,18 @@ class HighbayDataset(BaseDataset):
         scale  = np.max(pt_max - pt_min) / 2
         pos_sample = (pos_sample - center[None]) / scale # normalize to cube within (-1, 1)
 
-        cam2world = np.zeros((len(pos_sample), 3, 4))
-        cam2world[:, :3, :3] = rot_sample
-        cam2world[:, :3, -1] = pos_sample
-        self.poses = torch.FloatTensor(cam2world)
+        c2w_l = np.zeros((len(pos_sample), 3, 4))
+        c2w_l[:, :3, :3] = rot_sample
+        c2w_l[:, :3, -1] = pos_sample
+        c2w_r = np.zeros((len(pos_sample), 3, 4))
+        c2w_r[:, :3, :3] = rot_sample
+        x = rot_sample[:, :, 0]
+        c2w_r[:, :3, -1] = pos_sample + x * 0.12 / scale # lens distance = 120 mm = 0.12 m 
+        c2w = np.concatenate([c2w_l, c2w_r], axis=0)
+        self.poses = torch.FloatTensor(c2w)
 
         if self.split != 'train':
-            render_c2w = generate_interpolated_path(cam2world, 5)[:400]
+            render_c2w = generate_interpolated_path(c2w, 5)[:400]
             self.render_c2w = torch.FloatTensor(render_c2w)
             self.render_traj_rays = self.get_path_rays(render_c2w)
 
@@ -158,40 +163,12 @@ class HighbayDataset(BaseDataset):
     def read_semantics(self, dir_sem, valid_ids):
         label_list = []
         for i in valid_ids:
-            path = os.path.join(dir_sem, '{:0>5d}.png'.format(i))
+            path = os.path.join(dir_sem, '{:0>5d}.pgm'.format(i))
             label = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-            label = self.label_mapping(label.flatten())
+            label = label.flatten()
             label_list.append(label)
         label_list = np.stack(label_list)
         return label_list
-
-    def label_mapping(self, label):
-        def get_mask(label, mask_ids):
-            mask = np.zeros_like(label) > 1
-            for idx in mask_ids:
-                mask = np.logical_or(mask, label==idx)
-            return mask
-        label_new = np.ones_like(label).astype(np.int32)
-        label_new[:] = 9    # void
-        mask = get_mask(label, [6, 7, 8, 9, 10])
-        label_new[mask] = 0 # flat
-        mask = get_mask(label, [11, 12, 13, 14, 15, 16, 34, 35, 36, 42])
-        label_new[mask] = 1 # construction
-        mask = get_mask(label, [39, 40, 41, 44])
-        label_new[mask] = 2 # object
-        mask = get_mask(label, [21, 22])
-        label_new[mask] = 3 # nature
-        mask = get_mask(label, [23])
-        label_new[mask] = 4 # sky
-        mask = get_mask(label, [24, 25])
-        label_new[mask] = 5 # human
-        mask = get_mask(label, [19, 20, 26, 27, 28, 29, 30, 31, 32, 33, 43, -1])
-        label_new[mask] = 6 # vehicle
-        mask = get_mask(label, [38])
-        label_new[mask] = 7 # light source
-        mask = get_mask(label, [17, 18, 37])
-        label_new[mask] = 8 # pole
-        return label_new
     
     def read_normal(self, dir_normal, valid_ids):
         poses = self.poses.numpy()
@@ -231,6 +208,7 @@ def test():
     w, h = dataset.img_wh
     K = dataset.K
     poses = dataset.poses.numpy()
+    poses[:, :, -1] *= 100
     # for i in range(len(poses)):
     #     pose = np.concatenate([poses[i], np.array([[0, 0, 0, 1]])], axis=0)
     #     pose = np.linalg.inv(pose)

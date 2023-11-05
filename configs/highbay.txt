@@ -1,6 +1,6 @@
 root_dir = /hdd/datasets/highbay/0904/8_28_23_2023-09-04-09-13-16
 dataset_name = highbay
-exp_name = 0925_highbay_0
+exp_name = 1022_highbay_stereo_normal_sem
 batch_size = 1024
 scale = 8.0
 num_epochs = 100
@@ -16,10 +16,12 @@ render_depth = True
 
 ### render derived normal or not
 render_normal = True
+normal_mono = True
+normal_ref = True
 
 ### render semantic labels or not, set to False if no g.t. semantic labels
-render_semantic = False
-num_classes = 10
+render_semantic = True
+num_classes = 7
 
 ### appearance embeddings
 embed_a = True
@@ -28,3 +30,5 @@ embed_a_len = 8
 ### mask embeddings
 embed_msk = False
 random_bg = True
+
+chunk_size = 524288
