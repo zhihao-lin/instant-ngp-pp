@@ -1,0 +1,47 @@
+# base: 1112_6040_base
+# + GT sky mask 
+# + random background
+
+
+root_dir = /hdd/datasets/KITTI-360
+dataset_name = kitti
+exp_name = 240103_nvs_6040
+batch_size = 1024
+scale = 8.0
+num_epochs = 100
+lr = 0.002
+density_threshold = 0.001
+
+kitti_seq = 0
+kitti_start = 6040
+kitti_end = 6103
+kitti_test_id = [6050, 6060, 6070, 6080, 6090]
+nvs = True
+
+### perform relighting 
+
+### render a camera path(through interpolation between poses)
+render_traj = False
+
+### render camera poses from training dataset
+render_train = False
+
+render_rgb = True
+render_depth = True
+
+### render derived normal or not
+render_normal = True
+normal_mono = True
+normal_ref = True
+
+### render semantic labels or not, set to False if no g.t. semantic labels
+render_semantic = True
+num_classes = 10
+
+### appearance embeddings
+embed_a = True
+embed_a_len = 8
+
+### mask embeddings
+embed_msk = False
+random_bg = True

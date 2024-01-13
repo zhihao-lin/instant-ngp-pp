@@ -10,7 +10,7 @@ from models.networks import NGP
 from models.rendering import render
 from datasets import dataset_dict
 from datasets.ray_utils import get_rays
-from utils import load_ckpt, save_image, convert_normal
+from utils import load_ckpt, save_image, convert_normal, FrameEmbedding
 from opt import get_opts
 from einops import rearrange
 
@@ -79,6 +79,7 @@ def render_for_test(hparams, split='test'):
             kwargs['frame_start'] = hparams.kitti_start
             kwargs['frame_end'] = hparams.kitti_end
             kwargs['test_id'] = hparams.kitti_test_id
+            kwargs['nvs'] = hparams.nvs
 
     if hparams.dataset_name == 'mega':
             kwargs['mega_frame_start'] = hparams.mega_frame_start
@@ -89,11 +90,7 @@ def render_for_test(hparams, split='test'):
     
     if hparams.embed_a:
         dataset_train = dataset(split='train', **kwargs)
-        embed_a_length = hparams.embed_a_len
-        embedding_a = torch.nn.Embedding(len(dataset_train.poses), embed_a_length).cuda() 
-        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
-            prefixes_to_ignore=["model", "msk_model"])
-        embedding_a = embedding_a(torch.tensor([0]).cuda())    
+        frame_embed = FrameEmbedding(hparams.embed_a_len, dataset_train.poses, ckpt_path)  
     
     poses, render_traj_rays = None, None
     if hparams.render_traj:
@@ -138,6 +135,7 @@ def render_for_test(hparams, split='test'):
         if hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
             render_kwargs['exp_step_factor'] = 1/256
         if hparams.embed_a:
+            embedding_a = frame_embed(pose, mode='mean').cuda()
             render_kwargs['embedding_a'] = embedding_a
 
         rays_o = rays[:, :3]

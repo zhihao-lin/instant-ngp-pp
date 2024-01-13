@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch import nn
 import torch.nn.functional as F
 from PIL import Image
 
@@ -83,6 +84,7 @@ def guided_filter(image_p, image_i, r, eps=0.1):
 def save_image(image, path):
     if isinstance(image, torch.Tensor):
         image = image.cpu().numpy()
+    image = np.clip(image, 0.0, 1.0)
     image = (image * 255).astype(np.uint8)
     image = Image.fromarray(image)
     image.save(path)
@@ -92,22 +94,62 @@ def convert_normal(normal, pose_c2w):
     normal_cam = normal @ R_w2c.T
     return normal_cam
 
-def test():
-    from matplotlib import pyplot as plt
-    def show(img):
-        img = img.numpy()
-        plt.axis('off')
-        plt.imshow(img)
-        plt.show()
-        plt.close()
+class FrameEmbedding(nn.Module):
+    def __init__(self, embed_a_len, poses, ckpt_path=None):
+        super().__init__()
+        self.poses = poses
+        embedding_a = torch.nn.Embedding(len(poses), embed_a_len)
+        if ckpt_path is not None:
+            load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
+                prefixes_to_ignore=["model", "msk_model"])
+        self.embedding_a = embedding_a
+        # print('** embedding_a:', self.embedding_a.weight.shape)
+    
+    def forward(self, x, mode='index'):
+        if mode == 'index':
+            emb = self.sample_index(x)
+        elif mode == 'nearest':
+            emb = self.sample_nearest(x)
+        elif mode == 'mean':
+            emb = self.sample_mean(x)
+        else:
+            raise ValueError('Invalid mode: {}'.format(mode))
+        return emb
+    
+    def sample_index(self, index):
+        if torch.is_tensor(index) == False:
+            index = torch.tensor([index])
+        emb = self.embedding_a(index)
+        return emb
 
-    depth = np.load('results/tnt/playground/depth_raw.npy')
-    depth = torch.tensor(depth[0])/16
-    # show(depth)
-    # depth_0 = guided_filter(depth, depth, r=5, eps=0.01)
-    # show(depth_0)
-    depth_1 = guided_filter(depth, depth, r=2, eps=0.01)
-    show(depth_1)
+    def sample_nearest(self, pose):
+        frames_t = self.poses[:, :3, -1]
+        t = pose[:3, -1]
+        dist = torch.sum((frames_t - t)**2, dim=1)
+        argmin = torch.argmin(dist)
+        index = torch.tensor([argmin])
+        # print('index:', index)
+        emb = self.embedding_a(index)
+        return emb
+
+    def sample_mean(self, pose):
+        frames_t = self.poses[:, :3, -1]
+        t = pose[:3, -1]
+        dist = torch.sum((frames_t - t)**2, dim=1)
+        _, indices = torch.topk(-dist, 2)
+        # print('indices:', indices)
+        embs = self.embedding_a(indices)
+        emb  = torch.mean(embs, dim=0, keepdim=True)
+        return emb
+
+def test():
+    poses = torch.randn(100, 3, 4)
+    frame_emb = FrameEmbedding(8, poses)
+    p = torch.randn(3, 4)
+    emb = frame_emb(p, mode='mean')
+    print('embedding shape:', emb.size())
+    
+
 
 if __name__ == '__main__':
     test()

@@ -68,6 +68,8 @@ def get_opts():
                         help='number of gpus')
     parser.add_argument('--lr', type=float, default=1e-2,
                         help='learning rate')
+    parser.add_argument('--density_threshold', type=float, default=1e-2,
+                        help='threshold for updating density grid')
     parser.add_argument('--depth_mono', action='store_true', default=False,
                         help='use 2D predicted depth')
     parser.add_argument('--normal_mono', action='store_true', default=False,
